@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Algo Más Que Contarte con Alfonso Aguirre</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #fff;
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 40px 20px 60px;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 28px;
+      text-align: center;
+    }
+    .show-artwork {
+      width: 100px; height: 100px;
+      border-radius: 16px;
+      object-fit: cover;
+      background: #1e1e1e;
+    }
+    .show-info h1 { font-size: 1.2rem; font-weight: 700; line-height: 1.3; }
+    .show-info p  { font-size: 0.88rem; color: #888; margin-top: 3px; }
+
+    /* ── Platform buttons ── */
+    .platforms {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 36px;
+    }
+    .platform-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 16px;
+      border-radius: 100px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      text-decoration: none;
+      color: #fff;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .platform-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .platform-btn:hover { transform: translateY(-1px); opacity: 0.88; }
+    .platform-btn.spotify { background: #1DB954; }
+    .platform-btn.apple   { background: #B150E2; }
+    .platform-btn.youtube { background: #FF0000; }
+
+    /* ── Sections ── */
+    .section { margin-bottom: 32px; }
+    .section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #555;
+      margin-bottom: 12px;
+    }
+
+    /* ── Latest episode card ── */
+    .latest-card {
+      background: #1a1a1a;
+      border-radius: 16px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s, background 0.15s;
+      border: 1px solid #2a2a2a;
+    }
+    .latest-card:hover { transform: translateY(-2px); background: #222; }
+    .latest-card-inner {
+      padding: 16px;
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .latest-artwork {
+      width: 70px; height: 70px;
+      border-radius: 10px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #333;
+    }
+    .latest-meta { flex: 1; min-width: 0; }
+    .latest-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 4px;
+    }
+    .latest-title {
+      font-size: 0.92rem;
+      font-weight: 600;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .latest-date-dur { font-size: 0.76rem; color: #666; margin-top: 5px; }
+    .latest-footer {
+      padding: 11px 16px;
+      border-top: 1px solid #2a2a2a;
+      font-size: 0.76rem;
+      color: #666;
+      display: flex;
+      align-items: center;
+    }
+    .latest-footer::after { content: '›'; margin-left: auto; font-size: 1rem; color: #444; }
+
+    /* ── Episode list ── */
+    .episodes-list { display: flex; flex-direction: column; gap: 2px; }
+    .episode-item {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      padding: 11px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+      background: transparent;
+      border: none;
+      width: 100%;
+      text-align: left;
+      color: inherit;
+    }
+    .episode-item:hover { background: #1a1a1a; }
+    .episode-thumb {
+      width: 50px; height: 50px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #1e1e1e;
+    }
+    .episode-meta { flex: 1; min-width: 0; }
+    .episode-title {
+      font-size: 0.86rem;
+      font-weight: 500;
+      line-height: 1.35;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .episode-date-dur { font-size: 0.74rem; color: #666; margin-top: 2px; }
+    .episode-chevron { color: #444; font-size: 1rem; flex-shrink: 0; }
+
+    /* ── Skeleton ── */
+    .skeleton { background: #1a1a1a; animation: pulse 1.5s ease-in-out infinite; }
+    .skeleton-latest { height: 118px; border-radius: 16px; }
+    .skeleton-ep { height: 72px; border-radius: 12px; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.75);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 100;
+    }
+    .modal-overlay.hidden { display: none; }
+
+    @media (min-width: 480px) {
+      .modal-overlay { align-items: center; }
+    }
+
+    .modal {
+      background: #1c1c1e;
+      border-radius: 24px 24px 0 0;
+      padding: 24px 20px 40px;
+      width: 100%;
+      max-width: 480px;
+      position: relative;
+      animation: slideUp .22s ease-out;
+    }
+    @media (min-width: 480px) {
+      .modal { border-radius: 24px; padding: 28px; margin: 20px; }
+    }
+    @keyframes slideUp { from{transform:translateY(28px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    .modal-close {
+      position: absolute;
+      top: 14px; right: 14px;
+      background: #2c2c2e;
+      border: none;
+      color: #aaa;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      font-size: 1.1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-close:hover { background: #3a3a3c; color: #fff; }
+
+    .modal-ep-header {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      padding-right: 34px;
+    }
+    .modal-ep-artwork {
+      width: 60px; height: 60px;
+      border-radius: 10px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #333;
+    }
+    .modal-show-label { font-size: 0.7rem; color: #888; margin-bottom: 4px; }
+    .modal-ep-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .modal-listen-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #555;
+      margin-bottom: 10px;
+    }
+    .modal-platforms { display: flex; flex-direction: column; gap: 9px; }
+    .modal-platform-btn {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 13px 16px;
+      border-radius: 14px;
+      text-decoration: none;
+      font-size: 0.92rem;
+      font-weight: 600;
+      color: #fff;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .modal-platform-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .modal-platform-btn:hover { opacity: .88; transform: translateY(-1px); }
+    .modal-platform-btn.spotify { background: #1DB954; }
+    .modal-platform-btn.apple   { background: #B150E2; }
+    .modal-platform-btn.youtube { background: #FF0000; }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <img id="show-artwork" class="show-artwork" src="" alt="Podcast cover" />
+    <div class="show-info">
+      <h1 id="show-name">Algo Más Que Contarte</h1>
+      <p>con Alfonso Aguirre</p>
+    </div>
+  </div>
+
+  <!-- Show-level platform links -->
+  <div class="platforms">
+    <a href="https://open.spotify.com/show/2YNRodcHc7nTjqVUzMRDB4" target="_blank" rel="noopener" class="platform-btn spotify">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      Spotify
+    </a>
+    <a href="https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX" target="_blank" rel="noopener" class="platform-btn apple">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 3.5a3.5 3.5 0 0 1 3.5 3.5c0 1.33-.744 2.484-1.836 3.086A5.51 5.51 0 0 1 15 14.5c0 .276-.224.5-.5.5h-5a.5.5 0 0 1-.5-.5 5.51 5.51 0 0 1 1.336-3.414A3.497 3.497 0 0 1 8.5 9 3.5 3.5 0 0 1 12 5.5zm0 9.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1z"/></svg>
+      Apple Podcasts
+    </a>
+    <a href="https://www.youtube.com/playlist?list=PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt" target="_blank" rel="noopener" class="platform-btn youtube">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+      YouTube Music
+    </a>
+  </div>
+
+  <!-- Latest episode -->
+  <section class="section">
+    <h2 class="section-title">Episodio más reciente</h2>
+    <div id="latest-episode">
+      <div class="skeleton skeleton-latest"></div>
+    </div>
+  </section>
+
+  <!-- Recent episodes -->
+  <section class="section">
+    <h2 class="section-title">Episodios recientes</h2>
+    <div id="episodes-list">
+      <div class="skeleton skeleton-ep" style="margin-bottom:2px"></div>
+      <div class="skeleton skeleton-ep" style="margin-bottom:2px"></div>
+      <div class="skeleton skeleton-ep"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true">
+  <div class="modal">
+    <button class="modal-close" id="modal-close" aria-label="Cerrar">&times;</button>
+    <div class="modal-ep-header">
+      <img id="modal-artwork" class="modal-ep-artwork" src="" alt="" />
+      <div>
+        <p class="modal-show-label">Algo Más Que Contarte con Alfonso Aguirre</p>
+        <p id="modal-title" class="modal-ep-title"></p>
+      </div>
+    </div>
+    <p class="modal-listen-label">Escuchar en</p>
+    <div class="modal-platforms">
+      <a id="modal-spotify" href="#" target="_blank" rel="noopener" class="modal-platform-btn spotify">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+        Spotify
+      </a>
+      <a id="modal-apple" href="#" target="_blank" rel="noopener" class="modal-platform-btn apple">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 3.5a3.5 3.5 0 0 1 3.5 3.5c0 1.33-.744 2.484-1.836 3.086A5.51 5.51 0 0 1 15 14.5c0 .276-.224.5-.5.5h-5a.5.5 0 0 1-.5-.5 5.51 5.51 0 0 1 1.336-3.414A3.497 3.497 0 0 1 8.5 9 3.5 3.5 0 0 1 12 5.5zm0 9.5a.5.5 0 1 0 0 1 .5.5 0 0 0 0-1z"/></svg>
+        Apple Podcasts
+      </a>
+      <a id="modal-youtube" href="#" target="_blank" rel="noopener" class="modal-platform-btn youtube">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+        YouTube Music
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const SPOTIFY_SHOW  = 'https://open.spotify.com/show/2YNRodcHc7nTjqVUzMRDB4';
+  const APPLE_SHOW    = 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX';
+  const YOUTUBE_LIST  = 'https://www.youtube.com/playlist?list=PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
+
+  function fmtDuration(ms) {
+    if (!ms) return '';
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h} hr ${m} min` : `${m} min`;
+  }
+
+  function fmtDate(str) {
+    return new Date(str).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function openModal(ep) {
+    document.getElementById('modal-artwork').src = ep.artworkUrl600 || ep.artworkUrl160 || '';
+    document.getElementById('modal-title').textContent = ep.trackName || '';
+    document.getElementById('modal-apple').href   = ep.trackViewUrl || APPLE_SHOW;
+    document.getElementById('modal-spotify').href = SPOTIFY_SHOW;
+    document.getElementById('modal-youtube').href = YOUTUBE_LIST;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('modal-close').addEventListener('click', closeModal);
+  document.getElementById('modal-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  function renderLatest(ep) {
+    const el = document.getElementById('latest-episode');
+    el.innerHTML = `
+      <div class="latest-card">
+        <div class="latest-card-inner">
+          <img class="latest-artwork" src="${ep.artworkUrl600 || ep.artworkUrl160 || ''}" alt="" />
+          <div class="latest-meta">
+            <div class="latest-label">Nuevo episodio</div>
+            <div class="latest-title">${ep.trackName}</div>
+            <div class="latest-date-dur">${fmtDate(ep.releaseDate)} · ${fmtDuration(ep.trackTimeMillis)}</div>
+          </div>
+        </div>
+        <div class="latest-footer">Escuchar en tu plataforma favorita</div>
+      </div>`;
+    el.querySelector('.latest-card').addEventListener('click', () => openModal(ep));
+  }
+
+  function renderEpisodes(episodes) {
+    const list = document.getElementById('episodes-list');
+    list.innerHTML = '';
+    episodes.forEach(ep => {
+      const btn = document.createElement('button');
+      btn.className = 'episode-item';
+      btn.innerHTML = `
+        <img class="episode-thumb" src="${ep.artworkUrl600 || ep.artworkUrl160 || ''}" alt="" />
+        <div class="episode-meta">
+          <div class="episode-title">${ep.trackName}</div>
+          <div class="episode-date-dur">${fmtDate(ep.releaseDate)} · ${fmtDuration(ep.trackTimeMillis)}</div>
+        </div>
+        <span class="episode-chevron">›</span>`;
+      btn.addEventListener('click', () => openModal(ep));
+      list.appendChild(btn);
+    });
+  }
+
+  async function load() {
+    try {
+      const res  = await fetch('https://itunes.apple.com/lookup?id=1493350313&entity=podcastEpisode&limit=20&country=mx');
+      const data = await res.json();
+      const all  = data.results || [];
+
+      const show = all.find(r => r.kind === 'podcast');
+      if (show) {
+        document.getElementById('show-artwork').src = show.artworkUrl600 || show.artworkUrl100 || '';
+        document.getElementById('show-name').textContent = show.collectionName || show.trackName || 'Algo Más Que Contarte';
+      }
+
+      const episodes = all
+        .filter(r => r.kind === 'podcast-episode')
+        .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
+
+      if (episodes.length > 0) {
+        renderLatest(episodes[0]);
+        renderEpisodes(episodes.slice(1));
+      }
+    } catch (e) {
+      console.error(e);
+      // Fallback: show recent episodes statically when API is unreachable
+      const ARTWORK = 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/00/11/32/001132cb-b9a1-19c5-ba7c-bd60c0e0afdb/mza_3601386356513534509.jpg/600x600bb.jpg';
+      const fallback = [
+        { trackName: '#83: 🗽 Crónicas de NYC: Primer viaje en pareja, la ONU y el MET', releaseDate: '2025-03-23', trackTimeMillis: 2421000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
+        { trackName: '#82: Cómo tomar acción a pesar del miedo', releaseDate: '2025-03-02', trackTimeMillis: 4596000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
+        { trackName: '#81: Nadie es inalcanzable: Relaciones Públicas para que tu libro llegue a quien NECESITA escucharte', releaseDate: '2025-02-22', trackTimeMillis: 3660000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
+        { trackName: '#80: El método que uso para leer 30 libros al año (sin sacrificar nada)', releaseDate: '2025-02-09', trackTimeMillis: 3120000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
+      ];
+      document.getElementById('show-artwork').src = ARTWORK;
+      renderLatest(fallback[0]);
+      renderEpisodes(fallback.slice(1));
+    }
+  }
+
+  load();
+</script>
+</body>
+</html>

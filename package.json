@@ -1,0 +1,8 @@
+{
+  "name": "podcast-linktree",
+  "version": "1.0.0",
+  "description": "Algo Más Que Contarte - Podcast Link Page",
+  "scripts": {
+    "start": "npx serve public"
+  }
+}
