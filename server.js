@@ -75,6 +75,10 @@ function titlesMatch(a, b) {
   return wordsA.filter(w => setB.has(w)).length / wordsA.length >= 0.7;
 }
 
+// ── CACHE (evita rate-limit de Spotify/YouTube) ──────────────────────────────
+const cache = { data: null, ts: 0 };
+const CACHE_TTL = 60 * 60 * 1000; // 1 hora en ms
+
 // ── SPOTIFY ──────────────────────────────────────────────────────────────────
 async function getSpotifyToken() {
   const id = process.env.SPOTIFY_CLIENT_ID, secret = process.env.SPOTIFY_CLIENT_SECRET;
@@ -154,69 +158,67 @@ async function fetchYouTubeVideos() {
   }
 }
 
+// ── Función que construye la lista completa de episodios (se cachea) ──────────
+async function buildAllEpisodes() {
+  const [itunesRes, spotifyToken] = await Promise.all([
+    fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=200&country=mx`),
+    getSpotifyToken()
+  ]);
+
+  const [itunesData, spotifyEps, youtubeVideos] = await Promise.all([
+    itunesRes.json(),
+    fetchSpotifyEpisodes(spotifyToken),
+    fetchYouTubeVideos()
+  ]);
+
+  const results   = itunesData.results || [];
+  const show      = results.find(r => r.wrapperType === 'track' && r.kind === 'podcast') || results[0];
+  const itunesEps = results
+    .filter(r => r.wrapperType === 'podcastEpisode' || r.kind === 'podcast-episode')
+    .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
+
+  const spotifyByNum = {}, spotifyByTitle = [];
+  for (const ep of spotifyEps) {
+    const n = epNum(ep.name), url = `https://open.spotify.com/episode/${ep.id}`;
+    if (n) spotifyByNum[n] = url;
+    spotifyByTitle.push({ title: ep.name, url });
+  }
+
+  const youtubeByNum = {}, youtubeByTitle = [];
+  for (const v of youtubeVideos) {
+    const n = epNum(v.title), url = `https://music.youtube.com/watch?v=${v.videoId}`;
+    if (n) youtubeByNum[n] = url;
+    youtubeByTitle.push({ title: v.title, url });
+  }
+
+  const allEpisodes = itunesEps.map(ep => {
+    const n = epNum(ep.trackName || '');
+    let spotifyUrl = (n && spotifyByNum[n]) || null;
+    if (!spotifyUrl) { const m = spotifyByTitle.find(v => titlesMatch(ep.trackName, v.title)); if (m) spotifyUrl = m.url; }
+    let youtubeUrl = (n && youtubeByNum[n]) || null;
+    if (!youtubeUrl) { const m = youtubeByTitle.find(v => titlesMatch(ep.trackName, v.title)); if (m) youtubeUrl = m.url; }
+    return { ...ep, spotifyUrl, youtubeUrl };
+  });
+
+  return { show, allEpisodes };
+}
+
 // ── MAIN API ENDPOINT — supports ?offset=0&limit=6 ──────────────────────────
 app.get('/api/episodes', async (req, res) => {
   try {
     const offset = Math.max(0, parseInt(req.query.offset) || 0);
     const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit) || 6));
 
-    const [itunesRes, spotifyToken] = await Promise.all([
-      fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=200&country=mx`),
-      getSpotifyToken()
-    ]);
-
-    const [itunesData, spotifyEps, youtubeVideos] = await Promise.all([
-      itunesRes.json(),
-      fetchSpotifyEpisodes(spotifyToken),
-      fetchYouTubeVideos()
-    ]);
-
-    // iTunes
-    const results   = itunesData.results || [];
-    const show      = results.find(r => r.wrapperType === 'track' && r.kind === 'podcast') || results[0];
-    const itunesEps = results
-      .filter(r => r.wrapperType === 'podcastEpisode' || r.kind === 'podcast-episode')
-      .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
-
-    // Spotify: index by number AND keep list for title matching
-    const spotifyByNum   = {};
-    const spotifyByTitle = [];
-    for (const ep of spotifyEps) {
-      const n   = epNum(ep.name);
-      const url = `https://open.spotify.com/episode/${ep.id}`;
-      if (n) spotifyByNum[n] = url;
-      spotifyByTitle.push({ title: ep.name, url });
+    // Usar cache si está vigente (evita rate-limit de Spotify)
+    if (!cache.data || Date.now() - cache.ts > CACHE_TTL) {
+      console.log('Cache miss — fetching fresh data from APIs...');
+      cache.data = await buildAllEpisodes();
+      cache.ts   = Date.now();
+    } else {
+      console.log('Cache hit — serving cached data');
     }
 
-    // YouTube: index by number AND keep list for title matching
-    const youtubeByNum   = {};
-    const youtubeByTitle = [];
-    for (const v of youtubeVideos) {
-      const n   = epNum(v.title);
-      const url = `https://music.youtube.com/watch?v=${v.videoId}`;
-      if (n) youtubeByNum[n] = url;
-      youtubeByTitle.push({ title: v.title, url });
-    }
-
-    // Merge all episodes with platform URLs
-    const allEpisodes = itunesEps.map(ep => {
-      const n = epNum(ep.trackName || '');
-
-      let spotifyUrl = (n && spotifyByNum[n]) || null;
-      if (!spotifyUrl) {
-        const m = spotifyByTitle.find(v => titlesMatch(ep.trackName, v.title));
-        if (m) spotifyUrl = m.url;
-      }
-
-      let youtubeUrl = (n && youtubeByNum[n]) || null;
-      if (!youtubeUrl) {
-        const m = youtubeByTitle.find(v => titlesMatch(ep.trackName, v.title));
-        if (m) youtubeUrl = m.url;
-      }
-
-      return { ...ep, spotifyUrl, youtubeUrl };
-    });
-
+    const { show, allEpisodes } = cache.data;
     const total   = allEpisodes.length;
     const page    = allEpisodes.slice(offset, offset + limit);
     const hasMore = offset + limit < total;
