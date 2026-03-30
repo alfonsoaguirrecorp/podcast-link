@@ -1,6 +1,6 @@
-const SPOTIFY_SHOW = 'https://open.spotify.com/show/2YNRodcHc7nTjqVUzMRDB4';
-const APPLE_SHOW = 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX';
-const YOUTUBE_PLAYLIST = 'https://www.youtube.com/playlist?list=PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
+const SPOTIFY_SHOW_URL    = 'https://open.spotify.com/show/2YNRodcHc7nTjqVUzMRDB4';
+const APPLE_SHOW_URL      = 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX';
+const YOUTUBE_PLAYLIST_URL = 'https://www.youtube.com/playlist?list=PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
 
 function formatDuration(ms) {
   if (!ms) return '';
@@ -16,21 +16,20 @@ function formatDate(dateStr) {
   return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
-function openModal(episode) {
-  const overlay = document.getElementById('modal-overlay');
-  document.getElementById('modal-artwork').src = episode.artworkUrl600 || episode.artworkUrl160 || '';
-  document.getElementById('modal-title').textContent = episode.trackName || 'Episodio';
+function openModal(ep) {
+  document.getElementById('modal-artwork').src = ep.artworkUrl600 || ep.artworkUrl160 || '';
+  document.getElementById('modal-title').textContent = ep.trackName || 'Episodio';
 
-  // Apple Podcasts: use episode-specific URL from iTunes API
-  document.getElementById('modal-apple').href = episode.trackViewUrl || APPLE_SHOW;
+  // Apple Podcasts: always episode-specific from iTunes API
+  document.getElementById('modal-apple').href = ep.trackViewUrl || APPLE_SHOW_URL;
 
-  // Spotify: link to show (episode-specific requires Spotify API auth)
-  document.getElementById('modal-spotify').href = SPOTIFY_SHOW;
+  // Spotify: episode-specific if available, otherwise show page
+  document.getElementById('modal-spotify').href = ep.spotifyUrl || SPOTIFY_SHOW_URL;
 
-  // YouTube: playlist
-  document.getElementById('modal-youtube').href = YOUTUBE_PLAYLIST;
+  // YouTube Music: episode-specific if available, otherwise playlist
+  document.getElementById('modal-youtube').href = ep.youtubeUrl || YOUTUBE_PLAYLIST_URL;
 
-  overlay.classList.remove('hidden');
+  document.getElementById('modal-overlay').classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
 
@@ -59,7 +58,6 @@ function renderLatest(ep) {
 function renderEpisodes(episodes) {
   const list = document.getElementById('episodes-list');
   list.innerHTML = '';
-
   episodes.forEach(ep => {
     const btn = document.createElement('button');
     btn.className = 'episode-item';
@@ -78,20 +76,11 @@ function renderEpisodes(episodes) {
 
 async function loadEpisodes() {
   try {
-    const res = await fetch(
-      'https://itunes.apple.com/lookup?id=1493350313&entity=podcastEpisode&limit=20&country=mx'
-    );
-    const raw = await res.json();
-    const results = raw.results || [];
-    const show = results.find(r => r.kind === 'podcast') || results[0];
-    const episodes = results
-      .filter(r => r.kind === 'podcast-episode')
-      .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
-    const data = { show, episodes };
+    const res  = await fetch('/api/episodes');
+    const data = await res.json();
 
     if (data.show) {
-      const artworkEl = document.getElementById('show-artwork');
-      artworkEl.src = data.show.artworkUrl600 || data.show.artworkUrl100 || '';
+      document.getElementById('show-artwork').src = data.show.artworkUrl600 || data.show.artworkUrl100 || '';
     }
 
     if (data.episodes && data.episodes.length > 0) {
@@ -100,8 +89,8 @@ async function loadEpisodes() {
     }
   } catch (err) {
     console.error('Error loading episodes:', err);
-    document.getElementById('latest-episode').innerHTML = '<p style="padding:20px;color:#666">No se pudieron cargar los episodios.</p>';
-    document.getElementById('episodes-list').innerHTML = '';
+    document.getElementById('latest-episode').innerHTML =
+      '<p style="padding:20px;color:#666">No se pudieron cargar los episodios.</p>';
   }
 }
 
