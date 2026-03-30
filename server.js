@@ -135,7 +135,7 @@ app.get('/api/episodes', async (req, res) => {
     const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit) || 6));
 
     const [itunesRes, spotifyToken] = await Promise.all([
-      fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=50&country=mx`),
+      fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=200&country=mx`),
       getSpotifyToken()
     ]);
 

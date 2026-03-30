@@ -429,12 +429,28 @@
     });
   }
 
+  function showSkeletons() {
+    const list = document.getElementById('episodes-list');
+    for (let i = 0; i < 3; i++) {
+      const sk = document.createElement('div');
+      sk.className = 'skeleton skeleton-ep loading-skeleton';
+      sk.style.marginBottom = '2px';
+      list.appendChild(sk);
+    }
+  }
+
+  function removeSkeletons() {
+    document.querySelectorAll('.loading-skeleton').forEach(el => el.remove());
+  }
+
   async function loadMore() {
     if (isLoading || noMore) return;
     isLoading = true;
+    showSkeletons();
     try {
       const res  = await fetch(`/api/episodes?offset=${currentOffset}&limit=${PAGE_SIZE}`);
       const data = await res.json();
+      removeSkeletons();
       const eps  = data.episodes || [];
       if (eps.length) {
         appendEpisodes(eps);
@@ -445,16 +461,26 @@
         document.getElementById('scroll-sentinel').style.display = 'none';
       }
     } catch (e) {
+      removeSkeletons();
       console.error('Error loading more episodes:', e);
     }
     isLoading = false;
   }
 
-  // IntersectionObserver fires when sentinel enters the viewport
+  // IntersectionObserver (works on Chrome/Firefox/mobile Safari)
   const observer = new IntersectionObserver(entries => {
     if (entries[0].isIntersecting) loadMore();
-  }, { rootMargin: '300px' });
+  }, { rootMargin: '400px' });
   observer.observe(document.getElementById('scroll-sentinel'));
+
+  // Fallback scroll listener for Safari desktop where IntersectionObserver can be unreliable
+  window.addEventListener('scroll', () => {
+    if (isLoading || noMore) return;
+    const sentinel = document.getElementById('scroll-sentinel');
+    if (!sentinel) return;
+    const rect = sentinel.getBoundingClientRect();
+    if (rect.top <= window.innerHeight + 400) loadMore();
+  }, { passive: true });
 
   // ── Initial load: fetch first episode (hero) + first page of list ─────────
   async function load() {
