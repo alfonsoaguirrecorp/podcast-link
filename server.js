@@ -22,20 +22,6 @@ app.get('/embed', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'embed.html'));
 });
 
-// ── DEBUG endpoint ───────────────────────────────────────────────────────────
-app.get('/debug/spotify', async (req, res) => {
-  try {
-    const token = await getSpotifyToken();
-    if (!token) return res.json({ error: 'No token — check env vars', id: !!process.env.SPOTIFY_CLIENT_ID, secret: !!process.env.SPOTIFY_CLIENT_SECRET });
-    const r = await fetch(`https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=5&market=US`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    const d = await r.json();
-    res.json({ status: r.status, hasItems: !!d.items, count: d.items?.length, error: d.error, first: d.items?.[0]?.name });
-  } catch (e) {
-    res.json({ error: e.message });
-  }
-});
 
 // ── HTML entity decoder for RSS titles ──────────────────────────────────────
 function decodeHtml(str = '') {
@@ -77,7 +63,9 @@ function titlesMatch(a, b) {
 
 // ── CACHE (evita rate-limit de Spotify/YouTube) ──────────────────────────────
 const cache = { data: null, ts: 0 };
-const CACHE_TTL = 60 * 60 * 1000; // 1 hora en ms
+const CACHE_TTL      = 60 * 60 * 1000;      // refresca episodios cada 1 hora
+const SPOTIFY_RETRY  = 30 * 60 * 1000;      // si Spotify da 429, esperar 30 min
+let   spotifyBlocked = 0;                    // timestamp del último 429
 
 // ── SPOTIFY ──────────────────────────────────────────────────────────────────
 async function getSpotifyToken() {
@@ -96,14 +84,24 @@ async function getSpotifyToken() {
 
 async function fetchSpotifyEpisodes(token) {
   if (!token) return [];
+  // Si Spotify nos bloqueó recientemente, no reintentar hasta que pase el tiempo
+  if (spotifyBlocked && Date.now() - spotifyBlocked < SPOTIFY_RETRY) {
+    console.log('Spotify bloqueado — esperando cooldown de 30 min');
+    return [];
+  }
   try {
     const all = [];
     let url = `https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=50&market=US`;
     while (url) {
-      const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.status === 429) {
+        spotifyBlocked = Date.now();
+        console.log('Spotify 429 — activando cooldown de 30 min');
+        break;
+      }
       const data = await res.json();
       if (!data.items) break;
-      all.push(...data.items);           // each item: { id, name }
+      all.push(...data.items);
       url = data.next || null;
     }
     return all;
