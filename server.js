@@ -9,161 +9,190 @@ const PODCAST_ID          = '1493350313';
 const SPOTIFY_SHOW_ID     = '2YNRodcHc7nTjqVUzMRDB4';
 const YOUTUBE_PLAYLIST_ID = 'PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
 
-// Fallbacks when API keys are missing
-const SPOTIFY_SHOW_URL   = 'https://open.spotify.com/show/2YNRodcHc7nTjqVUzMRDB4';
-const YOUTUBE_PLAYLIST_URL = 'https://www.youtube.com/playlist?list=PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
-
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Spotify: get token via Client Credentials (optional) ────────────────────
+// ── HTML entity decoder for RSS titles ──────────────────────────────────────
+function decodeHtml(str = '') {
+  return str
+    .replace(/&#(\d+);/g,        (_, c) => String.fromCharCode(parseInt(c, 10)))
+    .replace(/&#x([0-9A-Fa-f]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, ' ');
+}
+
+// ── Episode number extractor: "#83" → 83 ────────────────────────────────────
+function epNum(title = '') {
+  const m = title.match(/#(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+// ── Title normalizer: strips episode numbers, punctuation, lowercases ────────
+function normalizeTitle(title = '') {
+  return title
+    .replace(/#\d+\s*[:·\-]?\s*/g, '')              // remove "#83: " prefix
+    .replace(/[^\wáéíóúüñÁÉÍÓÚÜÑ\s]/g, ' ')         // keep letters/numbers/Spanish
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+// ── Title similarity check ───────────────────────────────────────────────────
+function titlesMatch(a, b) {
+  const na = normalizeTitle(a);
+  const nb = normalizeTitle(b);
+  if (!na || !nb) return false;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  // Word overlap: 70% of the shorter title's meaningful words appear in the other
+  const wordsA = na.split(' ').filter(w => w.length > 3);
+  const setB   = new Set(nb.split(' ').filter(w => w.length > 3));
+  if (!wordsA.length) return false;
+  return wordsA.filter(w => setB.has(w)).length / wordsA.length >= 0.7;
+}
+
+// ── SPOTIFY ──────────────────────────────────────────────────────────────────
 async function getSpotifyToken() {
-  const id     = process.env.SPOTIFY_CLIENT_ID;
-  const secret = process.env.SPOTIFY_CLIENT_SECRET;
+  const id = process.env.SPOTIFY_CLIENT_ID, secret = process.env.SPOTIFY_CLIENT_SECRET;
   if (!id || !secret) return null;
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method:  'POST',
+  const res  = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
     headers: {
       'Content-Type':  'application/x-www-form-urlencoded',
       'Authorization': 'Basic ' + Buffer.from(`${id}:${secret}`).toString('base64')
     },
     body: 'grant_type=client_credentials'
   });
-  const data = await res.json();
-  return data.access_token || null;
+  return (await res.json()).access_token || null;
 }
 
-// ── Spotify: fetch episodes via official API ─────────────────────────────────
-async function fetchSpotifyViaAPI(token) {
+async function fetchSpotifyEpisodes(token) {
+  if (!token) return [];
+  try {
+    const all = [];
+    let url = `https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=50&market=US`;
+    while (url) {
+      const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!data.items) break;
+      all.push(...data.items);           // each item: { id, name }
+      url = data.next || null;
+    }
+    return all;
+  } catch (e) {
+    console.error('Spotify API error:', e.message);
+    return [];
+  }
+}
+
+// ── YOUTUBE ──────────────────────────────────────────────────────────────────
+// Option A: YouTube Data API (all videos, requires YOUTUBE_API_KEY)
+async function fetchYouTubeViaAPI() {
+  const key = process.env.YOUTUBE_API_KEY;
+  if (!key) return null; // signal to use RSS fallback
   const all = [];
-  let url = `https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=50&market=US`;
-  while (url) {
-    const res  = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  let pageToken = '';
+  do {
+    const url = `https://www.googleapis.com/youtube/v3/playlistItems`
+      + `?part=snippet&playlistId=${YOUTUBE_PLAYLIST_ID}&maxResults=50&key=${key}`
+      + (pageToken ? `&pageToken=${pageToken}` : '');
+    const res  = await fetch(url);
     const data = await res.json();
     if (!data.items) break;
-    all.push(...data.items);
-    url = data.next || null;
-  }
-  return all; // each item has { id, name }
-}
-
-// ── Spotify: parse episode IDs from show page HTML (no credentials needed) ───
-async function fetchSpotifyViaPage() {
-  const res = await fetch(`https://open.spotify.com/show/${SPOTIFY_SHOW_ID}`, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept-Language': 'en-US,en;q=0.9'
+    for (const item of data.items) {
+      const videoId = item.snippet?.resourceId?.videoId;
+      const title   = decodeHtml(item.snippet?.title || '');
+      if (videoId) all.push({ videoId, title });
     }
-  });
-  const html = await res.text();
-
-  // Spotify embeds all page data in a __NEXT_DATA__ JSON script tag
-  const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
-  if (!match) return [];
-
-  const raw = match[1];
-  // Extract all { "name": "...", "uri": "spotify:episode:ID" } pairs
-  const pairs = [...raw.matchAll(/"name"\s*:\s*"((?:[^"\\]|\\.)*)"\s*(?:,\s*"[^"]*"\s*:\s*(?:"[^"]*"|[^,}\]]*)\s*,?\s*)*"uri"\s*:\s*"spotify:episode:([A-Za-z0-9]+)"/g)];
-
-  // Also try the reverse order: uri before name
-  const pairsRev = [...raw.matchAll(/"uri"\s*:\s*"spotify:episode:([A-Za-z0-9]+)"[^}]*?"name"\s*:\s*"((?:[^"\\]|\\.)*)"/g)];
-
-  const results = [];
-  for (const [, name, id] of pairs)    results.push({ id, name: name.replace(/\\u([\dA-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))) });
-  for (const [, id, name] of pairsRev) results.push({ id, name: name.replace(/\\u([\dA-Fa-f]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16))) });
-
-  // Deduplicate by ID
-  const seen = new Set();
-  return results.filter(e => seen.has(e.id) ? false : seen.add(e.id));
+    pageToken = data.nextPageToken || '';
+  } while (pageToken);
+  return all;
 }
 
-// ── Spotify: try API first, then page scraping ───────────────────────────────
-async function fetchSpotifyEpisodes(token) {
-  try {
-    if (token) return await fetchSpotifyViaAPI(token);
-    return await fetchSpotifyViaPage();
-  } catch (e) {
-    console.error('Spotify fetch error:', e.message);
-    return [];
-  }
+// Option B: Free YouTube RSS feed (last 15 videos only, no key needed)
+async function fetchYouTubeViaRSS() {
+  const url = `https://www.youtube.com/feeds/videos.xml?playlist_id=${YOUTUBE_PLAYLIST_ID}`;
+  const xml  = await (await fetch(url)).text();
+  return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map(([, block]) => ({
+    videoId: (block.match(/<yt:videoId>(.*?)<\/yt:videoId>/) || [])[1] || '',
+    title:   decodeHtml((block.match(/<title>(.*?)<\/title>/) || [])[1] || '')
+  })).filter(v => v.videoId);
 }
 
-// ── Fetch YouTube videos via free public RSS feed (no API key needed) ────────
 async function fetchYouTubeVideos() {
   try {
-    const url = `https://www.youtube.com/feeds/videos.xml?playlist_id=${YOUTUBE_PLAYLIST_ID}`;
-    const res  = await fetch(url);
-    const xml  = await res.text();
-
-    // Parse <entry> blocks from Atom feed
-    const entries = [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)];
-    return entries.map(([, block]) => {
-      const videoId = (block.match(/<yt:videoId>(.*?)<\/yt:videoId>/) || [])[1] || '';
-      const title   = (block.match(/<title>(.*?)<\/title>/)            || [])[1] || '';
-      return { videoId, title: title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>') };
-    }).filter(v => v.videoId);
+    const apiResult = await fetchYouTubeViaAPI();
+    if (apiResult !== null) return apiResult;   // API available → use it (all videos)
+    return await fetchYouTubeViaRSS();          // no key → RSS (last 15 only)
   } catch (e) {
-    console.error('YouTube RSS error:', e.message);
+    console.error('YouTube error:', e.message);
     return [];
   }
 }
 
-// ── Extract episode number from title, e.g. "#83" → 83 ──────────────────────
-function epNum(title = '') {
-  const m = title.match(/#(\d+)/);
-  return m ? parseInt(m[1], 10) : null;
-}
-
-// ── Main API endpoint ────────────────────────────────────────────────────────
+// ── MAIN API ENDPOINT ────────────────────────────────────────────────────────
 app.get('/api/episodes', async (req, res) => {
   try {
-    const itunesUrl = `https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=50&country=mx`;
-
-    // Kick off all fetches in parallel
     const [itunesRes, spotifyToken] = await Promise.all([
-      fetch(itunesUrl),
+      fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=50&country=mx`),
       getSpotifyToken()
     ]);
 
     const [itunesData, spotifyEps, youtubeVideos] = await Promise.all([
       itunesRes.json(),
-      fetchSpotifyEpisodes(spotifyToken),  // uses page scraping if no token
-      fetchYouTubeVideos()                 // uses free RSS feed, no key needed
+      fetchSpotifyEpisodes(spotifyToken),
+      fetchYouTubeVideos()
     ]);
 
-    // ── iTunes ──
-    const results = itunesData.results || [];
-    const show    = results.find(r => r.wrapperType === 'track' && r.kind === 'podcast') || results[0];
+    // iTunes
+    const results   = itunesData.results || [];
+    const show      = results.find(r => r.wrapperType === 'track' && r.kind === 'podcast') || results[0];
     const itunesEps = results
       .filter(r => r.wrapperType === 'podcastEpisode' || r.kind === 'podcast-episode')
       .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
 
-    // ── Spotify: build map { episodeNumber → spotifyEpisodeUrl } ──
-    const spotifyMap = {};
+    // Spotify: index by number AND keep list for title matching
+    const spotifyByNum   = {};
+    const spotifyByTitle = [];
     for (const ep of spotifyEps) {
-      const n = epNum(ep.name);
-      if (n) spotifyMap[n] = `https://open.spotify.com/episode/${ep.id}`;
+      const n   = epNum(ep.name);
+      const url = `https://open.spotify.com/episode/${ep.id}`;
+      if (n) spotifyByNum[n] = url;
+      spotifyByTitle.push({ title: ep.name, url });
     }
 
-    // ── YouTube: build map { episodeNumber → youtubeMusicUrl } ──
-    const youtubeMap = {};
-    for (const video of youtubeVideos) {
-      const n = epNum(video.title);
-      if (n) youtubeMap[n] = `https://music.youtube.com/watch?v=${video.videoId}`;
+    // YouTube: index by number AND keep list for title matching
+    const youtubeByNum   = {};
+    const youtubeByTitle = [];
+    for (const v of youtubeVideos) {
+      const n   = epNum(v.title);
+      const url = `https://music.youtube.com/watch?v=${v.videoId}`;
+      if (n) youtubeByNum[n] = url;
+      youtubeByTitle.push({ title: v.title, url });
     }
 
-    // ── Merge ──
+    // Merge: match each iTunes episode to Spotify and YouTube URLs
     const episodes = itunesEps.map(ep => {
       const n = epNum(ep.trackName || '');
-      return {
-        ...ep,
-        spotifyUrl: n && spotifyMap[n] ? spotifyMap[n] : null,
-        youtubeUrl: n && youtubeMap[n] ? youtubeMap[n] : null
-      };
+
+      // Spotify: number match → title match
+      let spotifyUrl = (n && spotifyByNum[n]) || null;
+      if (!spotifyUrl) {
+        const m = spotifyByTitle.find(v => titlesMatch(ep.trackName, v.title));
+        if (m) spotifyUrl = m.url;
+      }
+
+      // YouTube: number match → title match
+      let youtubeUrl = (n && youtubeByNum[n]) || null;
+      if (!youtubeUrl) {
+        const m = youtubeByTitle.find(v => titlesMatch(ep.trackName, v.title));
+        if (m) youtubeUrl = m.url;
+      }
+
+      return { ...ep, spotifyUrl, youtubeUrl };
     });
 
-    res.json({ show, episodes, spotifyReady: !!spotifyToken, youtubeReady: youtubeVideos.length > 0 });
+    res.json({ show, episodes });
   } catch (err) {
-    console.error('Error fetching episodes:', err);
+    console.error('API error:', err);
     res.status(500).json({ error: 'Error fetching episodes' });
   }
 });

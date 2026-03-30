@@ -316,6 +316,8 @@
       <div class="skeleton skeleton-ep" style="margin-bottom:2px"></div>
       <div class="skeleton skeleton-ep"></div>
     </div>
+    <!-- Sentinel: when visible, triggers loading next batch -->
+    <div id="scroll-sentinel" style="height:1px;margin-top:8px;"></div>
   </section>
 
 </div>
@@ -404,10 +406,14 @@
     el.querySelector('.latest-card').addEventListener('click', () => openModal(ep));
   }
 
-  function renderEpisodes(episodes) {
+  // ── Infinite scroll ──────────────────────────────────────────────────────
+  const PAGE_SIZE = 6;
+  let allEpisodes = [];
+  let shownCount  = 0;
+
+  function renderEpisodeBatch(eps) {
     const list = document.getElementById('episodes-list');
-    list.innerHTML = '';
-    episodes.forEach(ep => {
+    eps.forEach(ep => {
       const btn = document.createElement('button');
       btn.className = 'episode-item';
       btn.innerHTML = `
@@ -422,35 +428,46 @@
     });
   }
 
+  function loadMoreEpisodes() {
+    const next = allEpisodes.slice(shownCount, shownCount + PAGE_SIZE);
+    if (!next.length) return;
+    renderEpisodeBatch(next);
+    shownCount += next.length;
+    // Hide sentinel if all episodes are shown
+    if (shownCount >= allEpisodes.length) {
+      document.getElementById('scroll-sentinel').style.display = 'none';
+    }
+  }
+
+  // Intersection Observer — auto-loads when user scrolls to bottom
+  const sentinel = document.getElementById('scroll-sentinel');
+  const observer = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting) loadMoreEpisodes();
+  }, { rootMargin: '200px' });
+  observer.observe(sentinel);
+
   async function load() {
     try {
       const res  = await fetch('/api/episodes');
       const data = await res.json();
 
       if (data.show) {
-        const art = data.show.artworkUrl600 || data.show.artworkUrl100 || data.show.artworkUrl60 || '';
+        const art = data.show.artworkUrl600 || data.show.artworkUrl100 || '';
         if (art) document.getElementById('show-artwork').src = art;
-        document.getElementById('show-name').textContent = data.show.collectionName || data.show.trackName || 'Algo Más Que Contarte';
+        document.getElementById('show-name').textContent =
+          data.show.collectionName || data.show.trackName || 'Algo Más Que Contarte';
       }
 
-      const episodes = data.episodes || [];
-      if (episodes.length > 0) {
-        renderLatest(episodes[0]);
-        renderEpisodes(episodes.slice(1));
+      allEpisodes = data.episodes || [];
+      if (allEpisodes.length > 0) {
+        renderLatest(allEpisodes[0]);
+        // Show first batch of episode list (rest of episodes, 6 at a time)
+        allEpisodes = allEpisodes.slice(1);
+        shownCount  = 0;
+        loadMoreEpisodes();
       }
     } catch (e) {
       console.error(e);
-      // Fallback: show recent episodes statically when API is unreachable
-      const ARTWORK = 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/bf/ec/58/bfec583a-abc7-e2ce-98e7-ddad6b2827cc/mza_16516226109485693154.png/600x600bb.jpg';
-      const fallback = [
-        { trackName: '#83: 🗽 Crónicas de NYC: Primer viaje en pareja, la ONU y el MET', releaseDate: '2025-03-23', trackTimeMillis: 2421000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
-        { trackName: '#82: Cómo tomar acción a pesar del miedo', releaseDate: '2025-03-02', trackTimeMillis: 4596000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
-        { trackName: '#81: Nadie es inalcanzable: Relaciones Públicas para que tu libro llegue a quien NECESITA escucharte', releaseDate: '2025-02-22', trackTimeMillis: 3660000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
-        { trackName: '#80: El método que uso para leer 30 libros al año (sin sacrificar nada)', releaseDate: '2025-02-09', trackTimeMillis: 3120000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
-      ];
-      document.getElementById('show-artwork').src = ARTWORK;
-      renderLatest(fallback[0]);
-      renderEpisodes(fallback.slice(1));
     }
   }
 
