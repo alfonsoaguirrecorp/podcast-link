@@ -128,9 +128,12 @@ async function fetchYouTubeVideos() {
   }
 }
 
-// ── MAIN API ENDPOINT ────────────────────────────────────────────────────────
+// ── MAIN API ENDPOINT — supports ?offset=0&limit=6 ──────────────────────────
 app.get('/api/episodes', async (req, res) => {
   try {
+    const offset = Math.max(0, parseInt(req.query.offset) || 0);
+    const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit) || 6));
+
     const [itunesRes, spotifyToken] = await Promise.all([
       fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=50&country=mx`),
       getSpotifyToken()
@@ -169,18 +172,16 @@ app.get('/api/episodes', async (req, res) => {
       youtubeByTitle.push({ title: v.title, url });
     }
 
-    // Merge: match each iTunes episode to Spotify and YouTube URLs
-    const episodes = itunesEps.map(ep => {
+    // Merge all episodes with platform URLs
+    const allEpisodes = itunesEps.map(ep => {
       const n = epNum(ep.trackName || '');
 
-      // Spotify: number match → title match
       let spotifyUrl = (n && spotifyByNum[n]) || null;
       if (!spotifyUrl) {
         const m = spotifyByTitle.find(v => titlesMatch(ep.trackName, v.title));
         if (m) spotifyUrl = m.url;
       }
 
-      // YouTube: number match → title match
       let youtubeUrl = (n && youtubeByNum[n]) || null;
       if (!youtubeUrl) {
         const m = youtubeByTitle.find(v => titlesMatch(ep.trackName, v.title));
@@ -190,7 +191,11 @@ app.get('/api/episodes', async (req, res) => {
       return { ...ep, spotifyUrl, youtubeUrl };
     });
 
-    res.json({ show, episodes });
+    const total   = allEpisodes.length;
+    const page    = allEpisodes.slice(offset, offset + limit);
+    const hasMore = offset + limit < total;
+
+    res.json({ show: offset === 0 ? show : undefined, episodes: page, total, hasMore, offset, limit });
   } catch (err) {
     console.error('API error:', err);
     res.status(500).json({ error: 'Error fetching episodes' });

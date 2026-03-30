@@ -406,12 +406,13 @@
     el.querySelector('.latest-card').addEventListener('click', () => openModal(ep));
   }
 
-  // ── Infinite scroll ──────────────────────────────────────────────────────
-  const PAGE_SIZE = 6;
-  let allEpisodes = [];
-  let shownCount  = 0;
+  // ── True server-side pagination ───────────────────────────────────────────
+  const PAGE_SIZE  = 6;
+  let currentOffset = 1;   // offset 0 = latest episode (shown as hero), list starts at 1
+  let isLoading     = false;
+  let noMore        = false;
 
-  function renderEpisodeBatch(eps) {
+  function appendEpisodes(eps) {
     const list = document.getElementById('episodes-list');
     eps.forEach(ep => {
       const btn = document.createElement('button');
@@ -428,46 +429,59 @@
     });
   }
 
-  function loadMoreEpisodes() {
-    const next = allEpisodes.slice(shownCount, shownCount + PAGE_SIZE);
-    if (!next.length) return;
-    renderEpisodeBatch(next);
-    shownCount += next.length;
-    // Hide sentinel if all episodes are shown
-    if (shownCount >= allEpisodes.length) {
-      document.getElementById('scroll-sentinel').style.display = 'none';
-    }
-  }
-
-  // Intersection Observer — auto-loads when user scrolls to bottom
-  const sentinel = document.getElementById('scroll-sentinel');
-  const observer = new IntersectionObserver(entries => {
-    if (entries[0].isIntersecting) loadMoreEpisodes();
-  }, { rootMargin: '200px' });
-  observer.observe(sentinel);
-
-  async function load() {
+  async function loadMore() {
+    if (isLoading || noMore) return;
+    isLoading = true;
     try {
-      const res  = await fetch('/api/episodes');
+      const res  = await fetch(`/api/episodes?offset=${currentOffset}&limit=${PAGE_SIZE}`);
       const data = await res.json();
-
-      if (data.show) {
-        const art = data.show.artworkUrl600 || data.show.artworkUrl100 || '';
-        if (art) document.getElementById('show-artwork').src = art;
-        document.getElementById('show-name').textContent =
-          data.show.collectionName || data.show.trackName || 'Algo Más Que Contarte';
+      const eps  = data.episodes || [];
+      if (eps.length) {
+        appendEpisodes(eps);
+        currentOffset += eps.length;
       }
-
-      allEpisodes = data.episodes || [];
-      if (allEpisodes.length > 0) {
-        renderLatest(allEpisodes[0]);
-        // Show first batch of episode list (rest of episodes, 6 at a time)
-        allEpisodes = allEpisodes.slice(1);
-        shownCount  = 0;
-        loadMoreEpisodes();
+      if (!data.hasMore) {
+        noMore = true;
+        document.getElementById('scroll-sentinel').style.display = 'none';
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading more episodes:', e);
+    }
+    isLoading = false;
+  }
+
+  // IntersectionObserver fires when sentinel enters the viewport
+  const observer = new IntersectionObserver(entries => {
+    if (entries[0].isIntersecting) loadMore();
+  }, { rootMargin: '300px' });
+  observer.observe(document.getElementById('scroll-sentinel'));
+
+  // ── Initial load: fetch first episode (hero) + first page of list ─────────
+  async function load() {
+    try {
+      // Fetch the very first episode to use as the hero card
+      const firstRes  = await fetch('/api/episodes?offset=0&limit=1');
+      const firstData = await firstRes.json();
+
+      if (firstData.show) {
+        const art = firstData.show.artworkUrl600 || firstData.show.artworkUrl100 || '';
+        if (art) document.getElementById('show-artwork').src = art;
+        document.getElementById('show-name').textContent =
+          firstData.show.collectionName || firstData.show.trackName || 'Algo Más Que Contarte';
+      }
+
+      if (firstData.episodes && firstData.episodes[0]) {
+        renderLatest(firstData.episodes[0]);
+      }
+
+      // Clear skeletons, then load first page of the episode list
+      document.getElementById('episodes-list').innerHTML = '';
+      await loadMore();
+
+    } catch (e) {
+      console.error('Error on initial load:', e);
+      document.getElementById('episodes-list').innerHTML =
+        '<p style="padding:20px;color:#666;text-align:center">No se pudieron cargar los episodios.</p>';
     }
   }
 
