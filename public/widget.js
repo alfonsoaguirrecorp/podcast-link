@@ -52,8 +52,9 @@
     .pc-modal-title { font-size:.9rem; font-weight:600; line-height:1.4; color:#111; margin:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
     .pc-modal-label { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#aaa; margin:0 0 9px; }
     .pc-modal-platforms { display:flex; flex-direction:column; gap:8px; }
-    .pc-mpbtn { display:flex; align-items:center; gap:13px; padding:12px 15px; border-radius:13px; text-decoration:none; font-size:.9rem; font-weight:600; color:#fff; transition:opacity .15s,transform .15s; }
-    .pc-mpbtn:hover { opacity:.88; transform:translateY(-1px); }
+    .pc-mpbtn { display:flex; align-items:center; gap:13px; padding:12px 15px; border-radius:13px; text-decoration:none !important; font-size:.9rem; font-weight:600; color:#fff !important; transition:opacity .15s,transform .15s; }
+    .pc-mpbtn:hover { opacity:.88; transform:translateY(-1px); color:#fff !important; }
+    .pc-mpbtn:visited { color:#fff !important; }
     .pc-mpbtn svg { width:19px; height:19px; flex-shrink:0; }
     .pc-mpbtn.sp { background:#1DB954; } .pc-mpbtn.ap { background:#B150E2; } .pc-mpbtn.yt { background:#FF0000; }
   `;
