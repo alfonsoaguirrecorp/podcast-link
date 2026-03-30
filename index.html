@@ -369,10 +369,9 @@
   function openModal(ep) {
     document.getElementById('modal-artwork').src = ep.artworkUrl600 || ep.artworkUrl160 || '';
     document.getElementById('modal-title').textContent = ep.trackName || '';
-    const q = encodeURIComponent(ep.trackName || '');
-    document.getElementById('modal-apple').href   = ep.trackViewUrl || APPLE_SHOW;
-    document.getElementById('modal-spotify').href = `https://open.spotify.com/search/${q}`;
-    document.getElementById('modal-youtube').href = `https://music.youtube.com/search?q=${q}`;
+    document.getElementById('modal-apple').href   = ep.trackViewUrl   || APPLE_SHOW;
+    document.getElementById('modal-spotify').href = ep.spotifyUrl     || SPOTIFY_SHOW;
+    document.getElementById('modal-youtube').href = ep.youtubeUrl     || YOUTUBE_LIST;
     document.getElementById('modal-overlay').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
@@ -425,21 +424,16 @@
 
   async function load() {
     try {
-      const res  = await fetch('https://itunes.apple.com/lookup?id=1493350313&entity=podcastEpisode&limit=20&country=mx');
+      const res  = await fetch('/api/episodes');
       const data = await res.json();
-      const all  = data.results || [];
 
-      const show = all.find(r => r.kind === 'podcast' || r.wrapperType === 'track');
-      if (show) {
-        const art = show.artworkUrl600 || show.artworkUrl100 || show.artworkUrl60 || '';
+      if (data.show) {
+        const art = data.show.artworkUrl600 || data.show.artworkUrl100 || data.show.artworkUrl60 || '';
         if (art) document.getElementById('show-artwork').src = art;
-        document.getElementById('show-name').textContent = show.collectionName || show.trackName || 'Algo Más Que Contarte';
+        document.getElementById('show-name').textContent = data.show.collectionName || data.show.trackName || 'Algo Más Que Contarte';
       }
 
-      const episodes = all
-        .filter(r => r.kind === 'podcast-episode')
-        .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
-
+      const episodes = data.episodes || [];
       if (episodes.length > 0) {
         renderLatest(episodes[0]);
         renderEpisodes(episodes.slice(1));
