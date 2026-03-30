@@ -369,9 +369,10 @@
   function openModal(ep) {
     document.getElementById('modal-artwork').src = ep.artworkUrl600 || ep.artworkUrl160 || '';
     document.getElementById('modal-title').textContent = ep.trackName || '';
+    const q = encodeURIComponent(ep.trackName || '');
     document.getElementById('modal-apple').href   = ep.trackViewUrl || APPLE_SHOW;
-    document.getElementById('modal-spotify').href = SPOTIFY_SHOW;
-    document.getElementById('modal-youtube').href = YOUTUBE_LIST;
+    document.getElementById('modal-spotify').href = `https://open.spotify.com/search/${q}`;
+    document.getElementById('modal-youtube').href = `https://music.youtube.com/search?q=${q}`;
     document.getElementById('modal-overlay').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
