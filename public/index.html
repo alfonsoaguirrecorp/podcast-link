@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Algo Más Que Contarte con Alfonso Aguirre</title>
+  <!-- Google Analytics -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0NXQ0BPF3P"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0NXQ0BPF3P');
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -368,12 +376,29 @@
     return new Date(str).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
+  function trackPlatformClick(platform, episodeTitle) {
+    if (typeof gtag === 'function') {
+      gtag('event', 'platform_click', {
+        'event_category': 'Podcast',
+        'event_label': platform,
+        'episode_title': episodeTitle
+      });
+    }
+  }
+
   function openModal(ep) {
     document.getElementById('modal-artwork').src = ep.artworkUrl600 || ep.artworkUrl160 || '';
     document.getElementById('modal-title').textContent = ep.trackName || '';
     document.getElementById('modal-apple').href   = ep.trackViewUrl   || APPLE_SHOW;
     document.getElementById('modal-spotify').href = ep.spotifyUrl     || SPOTIFY_SHOW;
     document.getElementById('modal-youtube').href = ep.youtubeUrl     || YOUTUBE_LIST;
+
+    // Tracking de clics por plataforma
+    const title = ep.trackName || '';
+    document.getElementById('modal-spotify').onclick = () => trackPlatformClick('Spotify', title);
+    document.getElementById('modal-apple').onclick   = () => trackPlatformClick('Apple Podcasts', title);
+    document.getElementById('modal-youtube').onclick = () => trackPlatformClick('YouTube Music', title);
+
     document.getElementById('modal-overlay').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
