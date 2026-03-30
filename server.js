@@ -11,6 +11,10 @@ const YOUTUBE_PLAYLIST_ID = 'PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.get('/embed', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'embed.html'));
+});
+
 // ── HTML entity decoder for RSS titles ──────────────────────────────────────
 function decodeHtml(str = '') {
   return str
