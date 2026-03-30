@@ -6,14 +6,16 @@
 
   // ── Inject styles ────────────────────────────────────────────────────────
   const css = `
-    .pc-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 8px 0 40px; color: #111; }
+    .pc-wrap * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; box-sizing: border-box !important; }
+    .pc-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; max-width: 520px; margin: 0 auto; padding: 8px 0 40px; color: #111; }
     .pc-header { display:flex; flex-direction:column; align-items:center; gap:12px; margin-bottom:24px; text-align:center; }
     .pc-show-art { width:88px; height:88px; border-radius:14px; object-fit:cover; box-shadow:0 4px 16px rgba(0,0,0,.12); background:#e8e8e8; }
-    .pc-show-name { font-size:1.1rem; font-weight:700; color:#111; margin:0; }
-    .pc-show-sub  { font-size:0.85rem; color:#777; margin:2px 0 0; }
+    .pc-show-name { font-size:1.1rem !important; font-weight:700 !important; color:#111 !important; margin:0; }
+    .pc-show-sub  { font-size:0.85rem !important; color:#777 !important; margin:2px 0 0; }
     .pc-platforms { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:32px; }
-    .pc-pbtn { display:inline-flex; align-items:center; gap:7px; padding:8px 15px; border-radius:100px; font-size:0.8rem; font-weight:600; text-decoration:none; color:#fff; transition:transform .15s,opacity .15s; }
-    .pc-pbtn:hover { transform:translateY(-1px); opacity:.88; }
+    .pc-pbtn { display:inline-flex; align-items:center; gap:7px; padding:8px 15px; border-radius:100px; font-size:0.8rem !important; font-weight:600 !important; text-decoration:none !important; color:#fff !important; transition:transform .15s,opacity .15s; }
+    .pc-pbtn:hover { transform:translateY(-1px); opacity:.88; color:#fff !important; text-decoration:none !important; }
+    .pc-pbtn:visited { color:#fff !important; }
     .pc-pbtn svg { width:15px; height:15px; flex-shrink:0; }
     .pc-pbtn.sp { background:#1DB954; } .pc-pbtn.ap { background:#B150E2; } .pc-pbtn.yt { background:#FF0000; }
     .pc-section { margin-bottom:28px; }
@@ -23,16 +25,16 @@
     .pc-latest-inner { padding:14px; display:flex; gap:13px; align-items:flex-start; }
     .pc-latest-art { width:64px; height:64px; border-radius:9px; object-fit:cover; flex-shrink:0; background:#ddd; }
     .pc-latest-label { font-size:.65rem; font-weight:600; color:#999; text-transform:uppercase; letter-spacing:.05em; margin-bottom:3px; }
-    .pc-latest-title { font-size:.9rem; font-weight:600; line-height:1.4; color:#111; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-    .pc-latest-dd { font-size:.74rem; color:#888; margin-top:4px; }
+    .pc-latest-title { font-size:.9rem !important; font-weight:600 !important; line-height:1.4 !important; color:#111 !important; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .pc-latest-dd { font-size:.74rem !important; color:#888 !important; margin-top:4px; }
     .pc-latest-footer { padding:10px 14px; border-top:1px solid #e8e8e8; font-size:.74rem; color:#999; display:flex; align-items:center; }
     .pc-latest-footer::after { content:'›'; margin-left:auto; font-size:1rem; color:#ccc; }
     .pc-list { display:flex; flex-direction:column; gap:1px; }
     .pc-ep { display:flex; gap:11px; align-items:center; padding:10px; border-radius:11px; cursor:pointer; background:transparent; border:none; width:100%; text-align:left; color:inherit; transition:background .15s; font-family:inherit; }
     .pc-ep:hover { background:#f5f5f7; }
     .pc-ep-thumb { width:46px; height:46px; border-radius:7px; object-fit:cover; flex-shrink:0; background:#e8e8e8; }
-    .pc-ep-title { font-size:.84rem; font-weight:500; line-height:1.35; color:#111; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-    .pc-ep-dd { font-size:.72rem; color:#888; margin-top:2px; }
+    .pc-ep-title { font-size:.84rem !important; font-weight:500 !important; line-height:1.35 !important; color:#111 !important; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .pc-ep-dd { font-size:.72rem !important; color:#888 !important; margin-top:2px; }
     .pc-ep-chev { color:#ccc; font-size:1rem; flex-shrink:0; }
     .pc-skel { background:#ececec; animation:pc-pulse 1.5s ease-in-out infinite; border-radius:12px; }
     .pc-skel-latest { height:110px; margin-bottom:0; }
@@ -48,11 +50,11 @@
     .pc-modal-close:hover { background:#e0e0e0; color:#111; }
     .pc-modal-head { display:flex; gap:11px; align-items:flex-start; margin-bottom:18px; padding-right:34px; }
     .pc-modal-art { width:56px; height:56px; border-radius:9px; object-fit:cover; flex-shrink:0; background:#ddd; }
-    .pc-modal-show { font-size:.68rem; color:#999; margin:0 0 3px; }
-    .pc-modal-title { font-size:.9rem; font-weight:600; line-height:1.4; color:#111; margin:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-    .pc-modal-label { font-size:.65rem; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:#aaa; margin:0 0 9px; }
+    .pc-modal-show { font-size:.68rem !important; color:#999 !important; margin:0 0 3px; }
+    .pc-modal-title { font-size:.9rem !important; font-weight:600 !important; line-height:1.4 !important; color:#111 !important; margin:0; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+    .pc-modal-label { font-size:.65rem !important; font-weight:700 !important; text-transform:uppercase; letter-spacing:.07em; color:#aaa !important; margin:0 0 9px; }
     .pc-modal-platforms { display:flex; flex-direction:column; gap:8px; }
-    .pc-mpbtn { display:flex; align-items:center; gap:13px; padding:12px 15px; border-radius:13px; text-decoration:none !important; font-size:.9rem; font-weight:600; color:#fff !important; transition:opacity .15s,transform .15s; }
+    .pc-mpbtn { display:flex; align-items:center; gap:13px; padding:12px 15px; border-radius:13px; text-decoration:none !important; font-size:.9rem !important; font-weight:600 !important; color:#fff !important; transition:opacity .15s,transform .15s; }
     .pc-mpbtn:hover { opacity:.88; transform:translateY(-1px); color:#fff !important; }
     .pc-mpbtn:visited { color:#fff !important; }
     .pc-mpbtn svg { width:19px; height:19px; flex-shrink:0; }
