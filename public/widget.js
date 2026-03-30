@@ -8,10 +8,10 @@
   const css = `
     .pc-wrap *, .pc-modal-overlay * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; box-sizing: border-box !important; }
     .pc-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; max-width: 520px; margin: 0 auto; padding: 8px 0 40px; color: #111; }
-    .pc-header { display:flex; flex-direction:column; align-items:center; gap:12px; margin-bottom:24px; text-align:center; }
+    .pc-header { display:flex; flex-direction:row; align-items:center; gap:14px; margin-bottom:24px; text-align:left; }
     .pc-show-art { width:88px; height:88px; border-radius:14px; object-fit:cover; box-shadow:0 4px 16px rgba(0,0,0,.12); background:#e8e8e8; }
-    .pc-show-name { font-size:1.1rem !important; font-weight:700 !important; color:#111 !important; margin:0; }
-    .pc-show-sub  { font-size:0.85rem !important; color:#777 !important; margin:2px 0 0; }
+    .pc-show-name { font-size:1.1rem !important; font-weight:700 !important; color:#111 !important; margin:0 !important; line-height:1.15 !important; }
+    .pc-show-sub  { font-size:0.82rem !important; color:#777 !important; margin:2px 0 0 !important; line-height:1.15 !important; }
     .pc-platforms { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:32px; }
     .pc-pbtn { display:inline-flex; align-items:center; gap:7px; padding:8px 15px; border-radius:100px; font-size:0.8rem !important; font-weight:600 !important; text-decoration:none !important; color:#fff !important; transition:transform .15s,opacity .15s; }
     .pc-pbtn:hover { transform:translateY(-1px); opacity:.88; color:#fff !important; text-decoration:none !important; }
@@ -77,9 +77,9 @@
     <div class="pc-wrap">
       <div class="pc-header">
         <img id="pc-show-art" class="pc-show-art" src="https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/bf/ec/58/bfec583a-abc7-e2ce-98e7-ddad6b2827cc/mza_16516226109485693154.png/600x600bb.jpg" alt="Podcast" />
-        <div>
-          <p id="pc-show-name" class="pc-show-name">Algo Más Que Contarte</p>
-          <p class="pc-show-sub">con Alfonso Aguirre</p>
+        <div style="line-height:1.1">
+          <p id="pc-show-name" class="pc-show-name" style="margin:0">Algo Más Que Contarte</p>
+          <p class="pc-show-sub" style="margin:2px 0 0">Podcast</p>
         </div>
       </div>
       <div class="pc-platforms">
