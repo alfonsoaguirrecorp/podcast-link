@@ -18,6 +18,10 @@
     .pc-pbtn:visited { color:#fff !important; }
     .pc-pbtn svg { width:15px; height:15px; flex-shrink:0; }
     .pc-pbtn.sp { background:#1DB954; } .pc-pbtn.ap { background:#B150E2; } .pc-pbtn.yt { background:#FF0000; }
+    @media (max-width: 480px) {
+      .pc-pbtn { padding:7px 11px !important; font-size:0.72rem !important; gap:5px !important; }
+      .pc-pbtn svg { width:13px !important; height:13px !important; }
+    }
     .pc-section { margin-bottom:28px; }
     .pc-section-title { font-size:0.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#aaa; margin:0 0 10px; }
     .pc-latest { background:#f5f5f7; border-radius:14px; overflow:hidden; cursor:pointer; border:1px solid #e8e8e8; transition:transform .15s,background .15s; }
