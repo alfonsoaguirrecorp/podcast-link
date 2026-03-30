@@ -22,6 +22,21 @@ app.get('/embed', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'embed.html'));
 });
 
+// ── DEBUG endpoint ───────────────────────────────────────────────────────────
+app.get('/debug/spotify', async (req, res) => {
+  try {
+    const token = await getSpotifyToken();
+    if (!token) return res.json({ error: 'No token — check env vars', id: !!process.env.SPOTIFY_CLIENT_ID, secret: !!process.env.SPOTIFY_CLIENT_SECRET });
+    const r = await fetch(`https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=5&market=US`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const d = await r.json();
+    res.json({ status: r.status, hasItems: !!d.items, count: d.items?.length, error: d.error, first: d.items?.[0]?.name });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // ── HTML entity decoder for RSS titles ──────────────────────────────────────
 function decodeHtml(str = '') {
   return str
