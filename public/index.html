@@ -277,7 +277,7 @@
 
   <!-- Header -->
   <div class="header">
-    <img id="show-artwork" class="show-artwork" src="" alt="Podcast cover" />
+    <img id="show-artwork" class="show-artwork" src="https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/bf/ec/58/bfec583a-abc7-e2ce-98e7-ddad6b2827cc/mza_16516226109485693154.png/600x600bb.jpg" alt="Podcast cover" />
     <div class="show-info">
       <h1 id="show-name">Algo Más Que Contarte</h1>
       <p>con Alfonso Aguirre</p>
@@ -428,9 +428,10 @@
       const data = await res.json();
       const all  = data.results || [];
 
-      const show = all.find(r => r.kind === 'podcast');
+      const show = all.find(r => r.kind === 'podcast' || r.wrapperType === 'track');
       if (show) {
-        document.getElementById('show-artwork').src = show.artworkUrl600 || show.artworkUrl100 || '';
+        const art = show.artworkUrl600 || show.artworkUrl100 || show.artworkUrl60 || '';
+        if (art) document.getElementById('show-artwork').src = art;
         document.getElementById('show-name').textContent = show.collectionName || show.trackName || 'Algo Más Que Contarte';
       }
 
@@ -445,7 +446,7 @@
     } catch (e) {
       console.error(e);
       // Fallback: show recent episodes statically when API is unreachable
-      const ARTWORK = 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/00/11/32/001132cb-b9a1-19c5-ba7c-bd60c0e0afdb/mza_3601386356513534509.jpg/600x600bb.jpg';
+      const ARTWORK = 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/bf/ec/58/bfec583a-abc7-e2ce-98e7-ddad6b2827cc/mza_16516226109485693154.png/600x600bb.jpg';
       const fallback = [
         { trackName: '#83: 🗽 Crónicas de NYC: Primer viaje en pareja, la ONU y el MET', releaseDate: '2025-03-23', trackTimeMillis: 2421000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
         { trackName: '#82: Cómo tomar acción a pesar del miedo', releaseDate: '2025-03-02', trackTimeMillis: 4596000, artworkUrl600: ARTWORK, trackViewUrl: 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX' },
