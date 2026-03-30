@@ -11,6 +11,13 @@ const YOUTUBE_PLAYLIST_ID = 'PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// CORS — permite que sitios externos (Kajabi, etc.) usen el API
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  next();
+});
+
 app.get('/embed', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'embed.html'));
 });
