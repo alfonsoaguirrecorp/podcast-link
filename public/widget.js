@@ -123,8 +123,20 @@
   document.body.appendChild(modal);
 
   // ── Modal logic ───────────────────────────────────────────────────────────
+  // Force window.open() to bypass Kajabi's global click preventDefault
+  function addOpenHandler(id) {
+    document.getElementById(id).addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.open(this.href, '_blank', 'noopener,noreferrer');
+    });
+  }
+  addOpenHandler('pc-modal-sp');
+  addOpenHandler('pc-modal-ap');
+  addOpenHandler('pc-modal-yt');
+
   function openModal(ep) {
-    document.getElementById('pc-modal-art').src        = ep.artworkUrl600 || ep.artworkUrl160 || '';
+    document.getElementById('pc-modal-art').src           = ep.artworkUrl600 || ep.artworkUrl160 || '';
     document.getElementById('pc-modal-title').textContent = ep.trackName || '';
     document.getElementById('pc-modal-sp').href = ep.spotifyUrl   || SPOTIFY_SHOW;
     document.getElementById('pc-modal-ap').href = ep.trackViewUrl || APPLE_SHOW;
