@@ -6,7 +6,7 @@
 
   // ── Inject styles ────────────────────────────────────────────────────────
   const css = `
-    .pc-wrap * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; box-sizing: border-box !important; }
+    .pc-wrap *, .pc-modal-overlay * { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; box-sizing: border-box !important; }
     .pc-wrap { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important; max-width: 520px; margin: 0 auto; padding: 8px 0 40px; color: #111; }
     .pc-header { display:flex; flex-direction:column; align-items:center; gap:12px; margin-bottom:24px; text-align:center; }
     .pc-show-art { width:88px; height:88px; border-radius:14px; object-fit:cover; box-shadow:0 4px 16px rgba(0,0,0,.12); background:#e8e8e8; }
