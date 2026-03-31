@@ -28,7 +28,9 @@ async function redisGet(key) {
       headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
     });
     const data = await res.json();
-    return data.result ? JSON.parse(data.result) : null;
+    if (!data.result) return null;
+    const parsed = JSON.parse(data.result);
+    return typeof parsed === 'string' ? JSON.parse(parsed) : parsed;
   } catch (e) {
     console.error('Redis GET error:', e.message);
     return null;
