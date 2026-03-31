@@ -1,7 +1,6 @@
 const express = require('express');
 const fetch   = require('node-fetch');
 const path    = require('path');
-const fs      = require('fs');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -9,33 +8,68 @@ const PORT = process.env.PORT || 3000;
 const PODCAST_ID          = '1493350313';
 const SPOTIFY_SHOW_ID     = '2YNRodcHc7nTjqVUzMRDB4';
 const YOUTUBE_PLAYLIST_ID = 'PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
+const REDIS_URL           = process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN         = process.env.UPSTASH_REDIS_REST_TOKEN;
+const REDIS_KEY           = 'episode-links';
 
 app.use(express.static(path.join(__dirname, 'public')));
-
-// CORS
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET');
   next();
 });
+app.get('/embed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'embed.html')));
 
-app.get('/embed', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'embed.html'));
-});
-
-// ── Cargar episode-links.json al iniciar ──────────────────────────────────────
-// Este archivo guarda los Spotify URLs de episodios conocidos permanentemente.
-// Así no se llama a Spotify en cada restart del servidor.
-let knownSpotifyLinks = {};
-const LINKS_FILE = path.join(__dirname, 'episode-links.json');
-try {
-  knownSpotifyLinks = JSON.parse(fs.readFileSync(LINKS_FILE, 'utf8'));
-  console.log(`✅ Loaded ${Object.keys(knownSpotifyLinks).length} Spotify links from episode-links.json`);
-} catch (e) {
-  console.log('ℹ️  No episode-links.json found — will fetch from Spotify API for new episodes');
+// ── Upstash Redis helpers ─────────────────────────────────────────────────────
+async function redisGet(key) {
+  if (!REDIS_URL || !REDIS_TOKEN) return null;
+  try {
+    const res  = await fetch(`${REDIS_URL}/get/${key}`, {
+      headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+    });
+    const data = await res.json();
+    return data.result ? JSON.parse(data.result) : null;
+  } catch (e) {
+    console.error('Redis GET error:', e.message);
+    return null;
+  }
 }
 
-// ── HTML entity decoder ───────────────────────────────────────────────────────
+async function redisSet(key, value) {
+  if (!REDIS_URL || !REDIS_TOKEN) return;
+  try {
+    await fetch(`${REDIS_URL}/set/${key}`, {
+      method: 'POST',
+      headers: {
+        Authorization:  `Bearer ${REDIS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(JSON.stringify(value))
+    });
+  } catch (e) {
+    console.error('Redis SET error:', e.message);
+  }
+}
+
+// ── Links de Spotify guardados en Redis (persisten entre reinicios) ────────────
+let knownSpotifyLinks = {};
+
+async function loadSpotifyLinks() {
+  const saved = await redisGet(REDIS_KEY);
+  if (saved && typeof saved === 'object') {
+    knownSpotifyLinks = saved;
+    console.log(`✅ Cargados ${Object.keys(saved).length} Spotify links desde Redis`);
+  } else {
+    console.log('ℹ️  Redis vacío — se poblarán los links al primer request');
+  }
+}
+
+async function saveSpotifyLinks() {
+  await redisSet(REDIS_KEY, knownSpotifyLinks);
+  console.log(`💾 Guardados ${Object.keys(knownSpotifyLinks).length} links en Redis`);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function decodeHtml(str = '') {
   return str
     .replace(/&#(\d+);/g,           (_, c) => String.fromCharCode(parseInt(c, 10)))
@@ -44,26 +78,20 @@ function decodeHtml(str = '') {
     .replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&nbsp;/g, ' ');
 }
 
-// ── Episode number extractor: "#83" → 83 ─────────────────────────────────────
 function epNum(title = '') {
   const m = title.match(/#(\d+)/);
   return m ? parseInt(m[1], 10) : null;
 }
 
-// ── Title normalizer ──────────────────────────────────────────────────────────
 function normalizeTitle(title = '') {
   return title
     .replace(/#\d+\s*[:·\-]?\s*/g, '')
     .replace(/[^\wáéíóúüñÁÉÍÓÚÜÑ\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
+    .replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-// ── Title similarity check ────────────────────────────────────────────────────
 function titlesMatch(a, b) {
-  const na = normalizeTitle(a);
-  const nb = normalizeTitle(b);
+  const na = normalizeTitle(a), nb = normalizeTitle(b);
   if (!na || !nb) return false;
   if (na.includes(nb) || nb.includes(na)) return true;
   const wordsA = na.split(' ').filter(w => w.length > 3);
@@ -72,13 +100,10 @@ function titlesMatch(a, b) {
   return wordsA.filter(w => setB.has(w)).length / wordsA.length >= 0.7;
 }
 
-// ── CACHE ─────────────────────────────────────────────────────────────────────
-const cache = { data: null, ts: 0 };
-const CACHE_TTL     = 15 * 60 * 1000;   // refresca lista cada 15 min (iTunes)
-const SPOTIFY_RETRY = 30 * 60 * 1000;   // espera 30 min si Spotify da 429
+// ── Spotify ───────────────────────────────────────────────────────────────────
+const SPOTIFY_RETRY = 30 * 60 * 1000;
 let   spotifyBlocked = 0;
 
-// ── SPOTIFY token ─────────────────────────────────────────────────────────────
 async function getSpotifyToken() {
   const id = process.env.SPOTIFY_CLIENT_ID, secret = process.env.SPOTIFY_CLIENT_SECRET;
   if (!id || !secret) return null;
@@ -93,8 +118,25 @@ async function getSpotifyToken() {
   return (await res.json()).access_token || null;
 }
 
-// ── Busca un episodio específico en Spotify por título ────────────────────────
-async function findSpotifyEpisode(token, episodeName) {
+// Obtiene TODOS los episodios del show (para poblar Redis la primera vez)
+async function fetchAllSpotifyEpisodes(token) {
+  if (!token) return [];
+  if (spotifyBlocked && Date.now() - spotifyBlocked < SPOTIFY_RETRY) return [];
+  const all = [];
+  let url = `https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=50&market=US`;
+  while (url) {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 429) { spotifyBlocked = Date.now(); break; }
+    const data = await res.json();
+    if (!data.items) break;
+    all.push(...data.items);
+    url = data.next || null;
+  }
+  return all;
+}
+
+// Busca un episodio nuevo específico en Spotify (1 llamada, no el show completo)
+async function findNewSpotifyEpisode(token, episodeName) {
   if (!token) return null;
   if (spotifyBlocked && Date.now() - spotifyBlocked < SPOTIFY_RETRY) return null;
   try {
@@ -107,8 +149,7 @@ async function findSpotifyEpisode(token, episodeName) {
     const data = await res.json();
     const eps  = data.episodes?.items || [];
     const match = eps.find(ep =>
-      ep.show?.id === SPOTIFY_SHOW_ID ||
-      titlesMatch(ep.name, episodeName)
+      ep.show?.id === SPOTIFY_SHOW_ID || titlesMatch(ep.name, episodeName)
     );
     return match ? `https://open.spotify.com/episode/${match.id}` : null;
   } catch (e) {
@@ -117,7 +158,7 @@ async function findSpotifyEpisode(token, episodeName) {
   }
 }
 
-// ── YOUTUBE ───────────────────────────────────────────────────────────────────
+// ── YouTube ───────────────────────────────────────────────────────────────────
 async function fetchYouTubeViaAPI() {
   const key = process.env.YOUTUBE_API_KEY;
   if (!key) return null;
@@ -151,20 +192,18 @@ async function fetchYouTubeViaRSS() {
 
 async function fetchYouTubeVideos() {
   try {
-    const apiResult = await fetchYouTubeViaAPI();
-    if (apiResult !== null) return apiResult;
-    return await fetchYouTubeViaRSS();
+    const r = await fetchYouTubeViaAPI();
+    return r !== null ? r : await fetchYouTubeViaRSS();
   } catch (e) {
     console.error('YouTube error:', e.message);
     return [];
   }
 }
 
-// ── Construye lista completa de episodios ─────────────────────────────────────
+// ── Construye lista de episodios ──────────────────────────────────────────────
 async function buildAllEpisodes() {
-  const [itunesRes, spotifyToken, youtubeVideos] = await Promise.all([
+  const [itunesRes, youtubeVideos] = await Promise.all([
     fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=200&country=mx`),
-    getSpotifyToken(),
     fetchYouTubeVideos()
   ]);
 
@@ -178,37 +217,57 @@ async function buildAllEpisodes() {
   // YouTube maps
   const youtubeByNum = {}, youtubeByTitle = [];
   for (const v of youtubeVideos) {
-    const n = epNum(v.title), url = `https://music.youtube.com/watch?v=${v.videoId}`;
+    const n = epNum(v.title);
+    const url = `https://music.youtube.com/watch?v=${v.videoId}`;
     if (n) youtubeByNum[n] = url;
     youtubeByTitle.push({ title: v.title, url });
   }
 
-  // Build episodes — Spotify from file first, then API only for new ones
+  // Si Redis está vacío, poblar con TODOS los episodios de Spotify de una vez
+  const redisEmpty = Object.keys(knownSpotifyLinks).length === 0;
+  let needsSave    = false;
+
+  if (redisEmpty) {
+    console.log('🔄 Redis vacío — cargando todos los episodios de Spotify por primera vez...');
+    const token = await getSpotifyToken();
+    const eps   = await fetchAllSpotifyEpisodes(token);
+    if (eps.length > 0) {
+      for (const ep of eps) {
+        knownSpotifyLinks[ep.name] = `https://open.spotify.com/episode/${ep.id}`;
+      }
+      needsSave = true;
+      console.log(`✅ ${eps.length} episodios de Spotify cargados`);
+    }
+  }
+
+  // Construir episodios con sus links
   const allEpisodes = [];
+  let foundNew = false;
+
   for (const ep of itunesEps) {
     const n = epNum(ep.trackName || '');
 
-    // ── Spotify: buscar primero en episode-links.json (guardado permanentemente)
-    let spotifyUrl = null;
-    // 1. Buscar por nombre exacto en el archivo local
-    spotifyUrl = knownSpotifyLinks[ep.trackName] || null;
-    // 2. Buscar por similitud de título
+    // Spotify: buscar en links conocidos primero
+    let spotifyUrl = knownSpotifyLinks[ep.trackName] || null;
     if (!spotifyUrl) {
       const match = Object.entries(knownSpotifyLinks).find(([name]) => titlesMatch(ep.trackName, name));
       if (match) spotifyUrl = match[1];
     }
-    // 3. Si no está en el archivo (episodio nuevo), buscar en Spotify API
+
+    // Si no está guardado → es episodio nuevo → buscar en Spotify
     if (!spotifyUrl) {
-      console.log(`🔍 Nuevo episodio sin link de Spotify: "${ep.trackName}" — buscando en API...`);
-      spotifyUrl = await findSpotifyEpisode(spotifyToken, ep.trackName);
+      console.log(`🆕 Nuevo episodio detectado: "${ep.trackName}"`);
+      const token = await getSpotifyToken();
+      spotifyUrl  = await findNewSpotifyEpisode(token, ep.trackName);
       if (spotifyUrl) {
-        // Guardar en memoria para que no lo busque de nuevo en esta sesión
         knownSpotifyLinks[ep.trackName] = spotifyUrl;
-        console.log(`✅ Spotify link encontrado para "${ep.trackName}"`);
+        foundNew  = true;
+        needsSave = true;
+        console.log(`✅ Link de Spotify guardado para "${ep.trackName}"`);
       }
     }
 
-    // ── YouTube
+    // YouTube
     let youtubeUrl = (n && youtubeByNum[n]) || null;
     if (!youtubeUrl) {
       const m = youtubeByTitle.find(v => titlesMatch(ep.trackName, v.title));
@@ -218,17 +277,23 @@ async function buildAllEpisodes() {
     allEpisodes.push({ ...ep, spotifyUrl, youtubeUrl });
   }
 
+  // Guardar en Redis si hubo cambios
+  if (needsSave) await saveSpotifyLinks();
+
   return { show, allEpisodes };
 }
 
-// ── MAIN API ENDPOINT ─────────────────────────────────────────────────────────
+// ── Cache ─────────────────────────────────────────────────────────────────────
+const cache    = { data: null, ts: 0 };
+const CACHE_TTL = 15 * 60 * 1000;  // refresca cada 15 min
+
+// ── API endpoint ──────────────────────────────────────────────────────────────
 app.get('/api/episodes', async (req, res) => {
   try {
     const offset = Math.max(0, parseInt(req.query.offset) || 0);
     const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit) || 6));
 
     if (!cache.data || Date.now() - cache.ts > CACHE_TTL) {
-      console.log('Cache miss — fetching fresh data...');
       cache.data = await buildAllEpisodes();
       cache.ts   = Date.now();
     }
@@ -245,35 +310,8 @@ app.get('/api/episodes', async (req, res) => {
   }
 });
 
-// ── ADMIN: genera el contenido de episode-links.json ─────────────────────────
-// Llama este endpoint UNA VEZ para obtener todos los Spotify IDs.
-// Guarda el resultado como episode-links.json en GitHub.
-app.get('/admin/spotify-dump', async (req, res) => {
-  try {
-    const token = await getSpotifyToken();
-    if (!token) return res.status(400).json({ error: 'No hay credenciales de Spotify configuradas' });
-
-    const links = {};
-    let url = `https://api.spotify.com/v1/shows/${SPOTIFY_SHOW_ID}/episodes?limit=50&market=US`;
-    let total = 0;
-    while (url) {
-      const r    = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (r.status === 429) {
-        return res.status(429).json({ error: 'Spotify rate limit — espera 30 min e intenta de nuevo' });
-      }
-      const data = await r.json();
-      if (!data.items) break;
-      for (const ep of data.items) {
-        links[ep.name] = `https://open.spotify.com/episode/${ep.id}`;
-        total++;
-      }
-      url = data.next || null;
-    }
-
-    res.json({ total, links });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+// ── Arrancar servidor ─────────────────────────────────────────────────────────
+// Primero carga los links desde Redis, luego empieza a escuchar
+loadSpotifyLinks().then(() => {
+  app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 });
-
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
