@@ -234,18 +234,6 @@
     loading = false;
   }
 
-  // IntersectionObserver + scroll fallback
-  const obs = new IntersectionObserver(entries => {
-    if (entries[0].isIntersecting) loadMore();
-  }, { rootMargin: '400px' });
-  obs.observe(document.getElementById('pc-sentinel'));
-
-  window.addEventListener('scroll', () => {
-    if (loading || done) return;
-    const s = document.getElementById('pc-sentinel');
-    if (s && s.getBoundingClientRect().top <= window.innerHeight + 400) loadMore();
-  }, { passive: true });
-
   // ── Initial load ──────────────────────────────────────────────────────────
   async function init() {
     try {
@@ -260,6 +248,19 @@
       if (d.episodes && d.episodes[0]) renderLatest(d.episodes[0]);
       document.getElementById('pc-list').innerHTML = '';
       await loadMore();
+
+      // Activar scroll infinito SOLO después de que carga inicial termine
+      const obs = new IntersectionObserver(entries => {
+        if (entries[0].isIntersecting) loadMore();
+      }, { rootMargin: '400px' });
+      obs.observe(document.getElementById('pc-sentinel'));
+
+      window.addEventListener('scroll', () => {
+        if (loading || done) return;
+        const s = document.getElementById('pc-sentinel');
+        if (s && s.getBoundingClientRect().top <= window.innerHeight + 400) loadMore();
+      }, { passive: true });
+
     } catch (e) {
       document.getElementById('pc-list').innerHTML =
         '<p style="padding:16px;color:#aaa;text-align:center">No se pudieron cargar los episodios.</p>';
