@@ -285,22 +285,13 @@ async function buildAllEpisodes() {
   return { show, allEpisodes };
 }
 
-// ── Cache ─────────────────────────────────────────────────────────────────────
-const cache    = { data: null, ts: 0 };
-const CACHE_TTL = 15 * 60 * 1000;  // refresca cada 15 min
-
 // ── API endpoint ──────────────────────────────────────────────────────────────
 app.get('/api/episodes', async (req, res) => {
   try {
     const offset = Math.max(0, parseInt(req.query.offset) || 0);
     const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit) || 6));
 
-    if (!cache.data || Date.now() - cache.ts > CACHE_TTL) {
-      cache.data = await buildAllEpisodes();
-      cache.ts   = Date.now();
-    }
-
-    const { show, allEpisodes } = cache.data;
+    const { show, allEpisodes } = await buildAllEpisodes();
     const total   = allEpisodes.length;
     const page    = allEpisodes.slice(offset, offset + limit);
     const hasMore = offset + limit < total;
