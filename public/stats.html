@@ -275,14 +275,20 @@
     <h1>Estadísticas del podcast</h1>
     <p class="subtitle" id="data-range">Cargando datos…</p>
 
-    <div class="summary-row" id="summary-row">
+    <div class="summary-row">
       <div class="summary-card" id="trend-card">
         <div class="label">Descargas totales del podcast</div>
         <div class="value skeleton-line" style="width:80px;height:28px"></div>
         <div class="skeleton-line" style="width:100%;height:36px;margin-top:10px"></div>
       </div>
-      <div class="summary-card"><div class="label">Promedio primera semana</div><div class="value skeleton-line" style="width:60px;height:28px"></div></div>
-      <div class="summary-card"><div class="label">Episodio top (7 días)</div><div class="value skeleton-line" style="width:60px;height:28px"></div></div>
+      <div class="summary-card" id="avg-card">
+        <div class="label">Promedio primera semana</div>
+        <div class="value skeleton-line" style="width:60px;height:28px"></div>
+      </div>
+      <div class="summary-card" id="top-card">
+        <div class="label">Episodio top (7 días)</div>
+        <div class="value skeleton-line" style="width:60px;height:28px"></div>
+      </div>
     </div>
 
     <div class="legend">
@@ -385,16 +391,14 @@
         if (data.error) {
           document.getElementById('data-range').textContent = '';
           document.getElementById('stats-body').innerHTML =
-            `<tr><td colspan="7"><div class="error-msg">${data.error}</div></td></tr>`;
-          document.getElementById('summary-row').innerHTML = '';
+            `<tr><td colspan="8"><div class="error-msg">${data.error}</div></td></tr>`;
           return;
         }
 
         if (!data.episodes || data.episodes.length === 0) {
           document.getElementById('data-range').textContent = '';
           document.getElementById('stats-body').innerHTML =
-            `<tr><td colspan="7"><div class="no-data">Aún no hay datos suficientes.<br>Los episodios con el prefijo OP3 comenzarán a acumular estadísticas en los próximos días.</div></td></tr>`;
-          document.getElementById('summary-row').innerHTML = '';
+            `<tr><td colspan="8"><div class="no-data">Aún no hay datos suficientes.</div></td></tr>`;
           return;
         }
 
@@ -434,23 +438,16 @@
         document.getElementById('data-range').textContent =
           `Datos desde OP3 · Actualizado diariamente · Semáforo vs. promedio histórico al momento de publicación`;
 
-        // Update summary cards
-        document.getElementById('summary-row').innerHTML = `
-          <div class="summary-card">
-            <div class="label">Episodios con datos</div>
-            <div class="value">${withWeek.length}</div>
-            <div class="note">${eps.length} episodios en total</div>
-          </div>
-          <div class="summary-card">
-            <div class="label">Promedio actual (7 días)</div>
-            <div class="value">${avg7Global != null ? fmt(avg7Global) : '—'}</div>
-            <div class="note">histórico completo</div>
-          </div>
-          <div class="summary-card">
-            <div class="label">Top episodio (7 días)</div>
-            <div class="value">${topEp ? fmt(topEp.downloads7) : '—'}</div>
-            <div class="note">${topEp ? (topEp.title.length > 30 ? topEp.title.slice(0,30)+'…' : topEp.title) : ''}</div>
-          </div>
+        // Update summary cards individually (trend-card is handled by loadTrend)
+        document.getElementById('avg-card').innerHTML = `
+          <div class="label">Promedio primera semana</div>
+          <div class="value">${avg7Global != null ? fmt(avg7Global) : '—'}</div>
+          <div class="note">histórico completo</div>
+        `;
+        document.getElementById('top-card').innerHTML = `
+          <div class="label">Top episodio (7 días)</div>
+          <div class="value">${topEp ? fmt(topEp.downloads7) : '—'}</div>
+          <div class="note">${topEp ? (topEp.title.length > 30 ? topEp.title.slice(0,30)+'…' : topEp.title) : ''}</div>
         `;
 
         // Render rows — eps ya viene ordenado de más nuevo a más viejo (del servidor)
