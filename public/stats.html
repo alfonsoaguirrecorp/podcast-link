@@ -278,14 +278,36 @@
       return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
-    function badge(val, avg) {
-      if (val == null || avg == null) {
-        return `<span class="badge gray"><span class="dot"></span>Pendiente</span>`;
+    function badge(ep, avg7) {
+      let val = ep.downloads7;
+      let projected = false;
+
+      // Si no hay datos de 7 días pero el episodio tiene menos de 7 días,
+      // proyectar linealmente con el total actual
+      if ((val == null || val === 0) && ep.downloadsAll != null && ep.daysOld != null && ep.daysOld >= 1 && ep.daysOld < 7) {
+        val = Math.round(ep.downloadsAll / ep.daysOld * 7);
+        projected = true;
       }
-      const pct = (val - avg) / avg;
-      if (pct >= 0.2)  return `<span class="badge green"><span class="dot"></span>+${Math.round(pct*100)}%</span>`;
-      if (pct >= -0.2) return `<span class="badge yellow"><span class="dot"></span>${pct >= 0 ? '+' : ''}${Math.round(pct*100)}%</span>`;
-      return `<span class="badge red"><span class="dot"></span>${Math.round(pct*100)}%</span>`;
+
+      if (val == null || val === 0 || avg7 == null) {
+        return `<span class="badge gray"><span class="dot"></span>Sin datos</span>`;
+      }
+
+      const pct  = (val - avg7) / avg7;
+      const sign = pct >= 0 ? '+' : '';
+      const tag  = projected ? ' <small style="opacity:.7;font-size:.65rem">proy.</small>' : '';
+
+      if (pct >= 0.2)  return `<span class="badge green"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
+      if (pct >= -0.2) return `<span class="badge yellow"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
+      return `<span class="badge red"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
+    }
+
+    function fmtD7(ep) {
+      if (ep.downloads7 != null && ep.downloads7 > 0) return fmt(ep.downloads7);
+      if (ep.downloadsAll != null && ep.daysOld != null && ep.daysOld >= 1 && ep.daysOld < 7) {
+        return `${fmt(ep.downloadsAll)} <small style="color:#666;font-size:.75rem">día&nbsp;${ep.daysOld}</small>`;
+      }
+      return '—';
     }
 
     async function load() {
@@ -353,10 +375,10 @@
             </td>
             <td class="num">${fmt(ep.downloads1)}</td>
             <td class="num">${fmt(ep.downloads3)}</td>
-            <td class="num">${fmt(ep.downloads7)}</td>
+            <td class="num">${fmtD7(ep)}</td>
             <td class="num">${fmt(ep.downloads30)}</td>
             <td class="num">${fmt(ep.downloadsAll)}</td>
-            <td>${badge(ep.downloads7, avg7)}</td>
+            <td>${badge(ep, avg7)}</td>
           </tr>
         `).join('');
 

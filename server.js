@@ -366,13 +366,14 @@ app.get('/api/stats', async (req, res) => {
         return diffDays < 2 || o.title === ep.title;
       });
       if (match) {
+        const best = (a, b) => (a != null && a > 0) ? a : (b != null && b > 0) ? b : null;
         return {
           ...ep,
-          downloads1:   match.downloads1   ?? null,
-          downloads3:   match.downloads3   ?? null,
-          downloads7:   match.downloads7   ?? ep.downloads7,
-          downloads30:  match.downloads30  ?? ep.downloads30,
-          downloadsAll: match.downloadsAll ?? ep.downloadsAll,
+          downloads1:   match.downloads1   || null,
+          downloads3:   match.downloads3   || null,
+          downloads7:   best(match.downloads7,   ep.downloads7),
+          downloads30:  best(match.downloads30,  ep.downloads30),
+          downloadsAll: best(match.downloadsAll, ep.downloadsAll),
           source: 'op3'
         };
       }
@@ -397,6 +398,14 @@ app.get('/api/stats', async (req, res) => {
 
     // 5. Sort newest first
     merged.sort((a, b) => new Date(b.pubdate) - new Date(a.pubdate));
+
+    // 6. Add daysOld to each episode
+    const now = Date.now();
+    for (const ep of merged) {
+      ep.daysOld = ep.pubdate
+        ? Math.floor((now - new Date(ep.pubdate).getTime()) / 86400000)
+        : null;
+    }
 
     res.json({ episodes: merged });
   } catch (err) {
