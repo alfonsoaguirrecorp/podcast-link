@@ -425,6 +425,46 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+// ── OP3 Trend endpoint ────────────────────────────────────────────────────
+app.get('/api/trend', async (req, res) => {
+  try {
+    if (!OP3_TOKEN || !OP3_SHOW_UUID) {
+      return res.json({ error: 'Faltan variables OP3.' });
+    }
+    const now   = new Date();
+    const start = new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0];
+    const url   = `https://op3.dev/api/1/downloads/show/${OP3_SHOW_UUID}?token=${OP3_TOKEN}&format=json&start=${start}&bots=exclude&limit=20000`;
+    const r     = await fetch(url);
+    if (!r.ok) return res.json({ error: `OP3 error ${r.status}` });
+
+    const data = await r.json();
+    const rows = data.rows || [];
+
+    // Agrupar por día
+    const byDay = {};
+    for (const row of rows) {
+      const day = (row.time || '').slice(0, 10);
+      if (day) byDay[day] = (byDay[day] || 0) + 1;
+    }
+
+    // Construir array de últimos 14 días
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d   = new Date(now.getTime() - i * 86400000);
+      const key = d.toISOString().split('T')[0];
+      days.push({ date: key, downloads: byDay[key] || 0 });
+    }
+
+    const last7 = days.slice(7).reduce((s, d) => s + d.downloads, 0);
+    const prev7 = days.slice(0, 7).reduce((s, d) => s + d.downloads, 0);
+
+    res.json({ days, last7, prev7 });
+  } catch (err) {
+    console.error('Trend error:', err);
+    res.status(500).json({ error: 'Error al obtener tendencia.' });
+  }
+});
+
 // ── Arrancar servidor ─────────────────────────────────────────────────────────
 // Primero carga los links desde Redis, luego empieza a escuchar
 loadSpotifyLinks().then(() => {
