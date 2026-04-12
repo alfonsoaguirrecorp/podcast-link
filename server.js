@@ -431,8 +431,12 @@ app.get('/api/trend', async (req, res) => {
     if (!OP3_TOKEN || !OP3_SHOW_UUID) {
       return res.json({ error: 'Faltan variables OP3.' });
     }
+    const OP3_START_DATE = process.env.OP3_START_DATE;
+    if (!OP3_START_DATE) {
+      return res.json({ pending: true });
+    }
     const now   = new Date();
-    const start = new Date(now.getTime() - 14 * 86400000).toISOString().split('T')[0];
+    const start = OP3_START_DATE;
     const url   = `https://op3.dev/api/1/downloads/show/${OP3_SHOW_UUID}?token=${OP3_TOKEN}&format=json&start=${start}&bots=exclude&limit=20000`;
     const r     = await fetch(url);
     if (!r.ok) return res.json({ error: `OP3 error ${r.status}` });

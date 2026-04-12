@@ -485,8 +485,16 @@
         const card = document.getElementById('trend-card');
         if (!card) return;
 
+        if (data.pending) {
+          card.innerHTML = `
+            <div class="label">Descargas totales del podcast</div>
+            <div class="value" style="font-size:1.1rem;color:#555;font-weight:500">Próximamente</div>
+            <div class="note" style="margin-top:6px;line-height:1.5">Se activará cuando los datos de OP3 se estabilicen</div>
+          `;
+          return;
+        }
         if (data.error || !data.days) {
-          card.innerHTML = `<div class="label">Descargas totales del podcast</div><div class="note" style="color:#555;margin-top:8px">Sin datos aún — se acumula desde que se activó OP3</div>`;
+          card.innerHTML = `<div class="label">Descargas totales del podcast</div><div class="note" style="color:#555;margin-top:8px">Sin datos disponibles</div>`;
           return;
         }
 
