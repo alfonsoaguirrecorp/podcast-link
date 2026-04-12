@@ -15,7 +15,7 @@
     }
 
     .page {
-      max-width: 860px;
+      max-width: 1100px;
       margin: 0 auto;
       padding: 40px 20px 60px;
     }
@@ -459,7 +459,6 @@
             <td>
               <div class="ep-title">${ep.title || 'Sin título'}</div>
               <div class="ep-date">${formatDate(ep.pubdate)}</div>
-              <span class="source-tag ${ep.source === 'op3' ? 'source-op3' : 'source-libsyn'}">${ep.source === 'op3' ? 'OP3' : 'Libsyn'}</span>
             </td>
             <td class="num">${fmt(ep.downloads1)}</td>
             <td class="num">${fmt(ep.downloads3)}</td>
