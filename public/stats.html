@@ -142,6 +142,19 @@
     .badge.red    { background: #3d1a1a; color: #f87171; }
     .badge.gray   { background: #2a2a2a; color: #888; }
 
+    .source-tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-top: 3px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .source-op3    { background: #0d2a1a; color: #4ade80; }
+    .source-libsyn { background: #1e2030; color: #818cf8; }
+
     .dot {
       width: 7px;
       height: 7px;
@@ -336,6 +349,7 @@
             <td>
               <div class="ep-title">${ep.title || 'Sin título'}</div>
               <div class="ep-date">${formatDate(ep.pubdate)}</div>
+              <span class="source-tag ${ep.source === 'op3' ? 'source-op3' : 'source-libsyn'}">${ep.source === 'op3' ? 'OP3' : 'Libsyn'}</span>
             </td>
             <td class="num">${fmt(ep.downloads1)}</td>
             <td class="num">${fmt(ep.downloads3)}</td>

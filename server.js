@@ -1,6 +1,7 @@
 const express = require('express');
 const fetch   = require('node-fetch');
 const path    = require('path');
+const fs      = require('fs');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -306,24 +307,101 @@ app.get('/api/episodes', async (req, res) => {
   }
 });
 
+// ── CSV historical data ────────────────────────────────────────────────────
+function parseCSVLine(line) {
+  const result = [];
+  let inQuote = false, current = '';
+  for (const ch of line) {
+    if (ch === '"') { inQuote = !inQuote; }
+    else if (ch === ',' && !inQuote) { result.push(current); current = ''; }
+    else { current += ch; }
+  }
+  result.push(current);
+  return result;
+}
+
+function loadHistoricalCSV() {
+  const csvPath = path.join(__dirname, 'data', 'episodes-history.csv');
+  if (!fs.existsSync(csvPath)) return [];
+  const lines = fs.readFileSync(csvPath, 'utf8').trim().split('\n').slice(1);
+  return lines.map(line => {
+    const [, title, release, first7, first30, , total] = parseCSVLine(line);
+    const n = v => (v && v !== 'N/A' && !isNaN(parseInt(v))) ? parseInt(v) : null;
+    return {
+      title,
+      pubdate:     release ? new Date(release).toISOString() : null,
+      downloads7:  n(first7),
+      downloads30: n(first30),
+      downloadsAll: n(total),
+      source: 'libsyn'
+    };
+  }).filter(e => e.title && e.pubdate);
+}
+
 // ── OP3 Stats endpoint ────────────────────────────────────────────────────
 app.get('/api/stats', async (req, res) => {
   try {
-    if (!OP3_TOKEN || !OP3_SHOW_UUID) {
-      return res.json({ error: 'Faltan las variables de entorno OP3_TOKEN y OP3_SHOW_UUID en Render.' });
+    // 1. Historical CSV data
+    const csvEpisodes = loadHistoricalCSV();
+
+    // 2. OP3 data (optional — graceful fallback if missing)
+    let op3Episodes = [];
+    if (OP3_TOKEN && OP3_SHOW_UUID) {
+      try {
+        const url = `https://op3.dev/api/1/queries/episode-download-counts?showUuid=${OP3_SHOW_UUID}&token=${OP3_TOKEN}`;
+        const r   = await fetch(url);
+        if (r.ok) {
+          const data = await r.json();
+          op3Episodes = data.episodes || [];
+        }
+      } catch (err) {
+        console.error('OP3 fetch error:', err);
+      }
     }
-    const url = `https://op3.dev/api/1/queries/episode-download-counts?showUuid=${OP3_SHOW_UUID}&token=${OP3_TOKEN}`;
-    const r   = await fetch(url);
-    if (!r.ok) {
-      const text = await r.text();
-      console.error('OP3 error:', r.status, text);
-      return res.json({ error: `OP3 respondió con error ${r.status}. Verifica el token y el show UUID.` });
+
+    // 3. Merge: match OP3 episodes to CSV by pubdate (±2 days) or exact title
+    const merged = csvEpisodes.map(ep => {
+      const match = op3Episodes.find(o => {
+        const diffDays = Math.abs(new Date(o.pubdate) - new Date(ep.pubdate)) / 86400000;
+        return diffDays < 2 || o.title === ep.title;
+      });
+      if (match) {
+        return {
+          ...ep,
+          downloads1:   match.downloads1   ?? null,
+          downloads3:   match.downloads3   ?? null,
+          downloads7:   match.downloads7   ?? ep.downloads7,
+          downloads30:  match.downloads30  ?? ep.downloads30,
+          downloadsAll: match.downloadsAll ?? ep.downloadsAll,
+          source: 'op3'
+        };
+      }
+      return ep;
+    });
+
+    // 4. Add OP3 episodes not yet in CSV (brand new)
+    for (const o of op3Episodes) {
+      const already = merged.find(ep => {
+        const diffDays = Math.abs(new Date(o.pubdate) - new Date(ep.pubdate)) / 86400000;
+        return diffDays < 2 || o.title === ep.title;
+      });
+      if (!already) {
+        merged.unshift({
+          title: o.title, pubdate: o.pubdate,
+          downloads1: o.downloads1 ?? null, downloads3: o.downloads3 ?? null,
+          downloads7: o.downloads7 ?? null, downloads30: o.downloads30 ?? null,
+          downloadsAll: o.downloadsAll ?? null, source: 'op3'
+        });
+      }
     }
-    const data = await r.json();
-    res.json({ episodes: data.episodes || [] });
+
+    // 5. Sort newest first
+    merged.sort((a, b) => new Date(b.pubdate) - new Date(a.pubdate));
+
+    res.json({ episodes: merged });
   } catch (err) {
     console.error('Stats error:', err);
-    res.status(500).json({ error: 'Error al obtener estadísticas de OP3.' });
+    res.status(500).json({ error: 'Error al obtener estadísticas.' });
   }
 });
 
