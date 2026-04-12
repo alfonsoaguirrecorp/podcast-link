@@ -370,18 +370,39 @@
 
         const eps = data.episodes;
 
-        // Calculate average (only episodes with 7-day data complete)
-        const withWeek = eps.filter(e => e.downloads7 != null);
-        const avg7 = withWeek.length
+        // Promedio global (para las tarjetas de resumen)
+        const withWeek = eps.filter(e => e.downloads7 != null && e.downloads7 > 0);
+        const avg7Global = withWeek.length
           ? Math.round(withWeek.reduce((s, e) => s + e.downloads7, 0) / withWeek.length)
           : null;
+        const topEp = withWeek.length
+          ? withWeek.reduce((a, b) => b.downloads7 > a.downloads7 ? b : a)
+          : null;
 
-        const topEp  = withWeek.length ? withWeek.reduce((a, b) => b.downloads7 > a.downloads7 ? b : a) : null;
-        const maxAll = eps.reduce((m, e) => e.downloadsAll != null && e.downloadsAll > m ? e.downloadsAll : m, 0);
+        // Promedio rolling: cada episodio se compara solo contra
+        // los episodios publicados ANTES que él (no los futuros).
+        // Ordenar de más antiguo a más nuevo para acumular.
+        const byDate = [...eps]
+          .filter(e => e.pubdate)
+          .sort((a, b) => new Date(a.pubdate) - new Date(b.pubdate));
+
+        let runSum = 0, runCount = 0;
+        for (const ep of byDate) {
+          // avgAtTime = promedio de todos los episodios anteriores a este
+          ep.avgAtTime = runCount >= 3
+            ? Math.round(runSum / runCount)
+            : null; // sin referencia si hay menos de 3 episodios previos
+
+          // Agregar este episodio al acumulado para el siguiente
+          if (ep.downloads7 != null && ep.downloads7 > 0) {
+            runSum  += ep.downloads7;
+            runCount++;
+          }
+        }
 
         // Update subtitle
         document.getElementById('data-range').textContent =
-          `Datos desde OP3 · Actualizado diariamente`;
+          `Datos desde OP3 · Actualizado diariamente · Semáforo vs. promedio histórico al momento de publicación`;
 
         // Update summary cards
         document.getElementById('summary-row').innerHTML = `
@@ -391,9 +412,9 @@
             <div class="note">${eps.length} episodios en total</div>
           </div>
           <div class="summary-card">
-            <div class="label">Promedio primera semana</div>
-            <div class="value">${avg7 != null ? fmt(avg7) : '—'}</div>
-            <div class="note">descargas en 7 días</div>
+            <div class="label">Promedio actual (7 días)</div>
+            <div class="value">${avg7Global != null ? fmt(avg7Global) : '—'}</div>
+            <div class="note">histórico completo</div>
           </div>
           <div class="summary-card">
             <div class="label">Top episodio (7 días)</div>
@@ -402,7 +423,7 @@
           </div>
         `;
 
-        // Render rows
+        // Render rows — eps ya viene ordenado de más nuevo a más viejo (del servidor)
         const rows = eps.map(ep => `
           <tr>
             <td>
@@ -415,8 +436,8 @@
             <td class="num">${fmtD7(ep)}</td>
             <td class="num">${fmt(ep.downloads30)}</td>
             <td class="num">${fmt(ep.downloadsAll)}</td>
-            <td>${badge(ep, avg7)}</td>
-            <td>${actionTag(ep, avg7)}</td>
+            <td>${badge(ep, ep.avgAtTime)}</td>
+            <td>${actionTag(ep, ep.avgAtTime)}</td>
           </tr>
         `).join('');
 
