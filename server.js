@@ -11,6 +11,8 @@ const YOUTUBE_PLAYLIST_ID = 'PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
 const REDIS_URL           = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN         = process.env.UPSTASH_REDIS_REST_TOKEN;
 const REDIS_KEY           = 'episode-links';
+const OP3_TOKEN           = process.env.OP3_TOKEN;
+const OP3_SHOW_UUID       = process.env.OP3_SHOW_UUID;
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
@@ -19,6 +21,7 @@ app.use((req, res, next) => {
   next();
 });
 app.get('/embed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'embed.html')));
+app.get('/stats', (req, res) => res.sendFile(path.join(__dirname, 'public', 'stats.html')));
 
 // ── Upstash Redis helpers ─────────────────────────────────────────────────────
 async function redisGet(key) {
@@ -300,6 +303,27 @@ app.get('/api/episodes', async (req, res) => {
   } catch (err) {
     console.error('API error:', err);
     res.status(500).json({ error: 'Error fetching episodes' });
+  }
+});
+
+// ── OP3 Stats endpoint ────────────────────────────────────────────────────
+app.get('/api/stats', async (req, res) => {
+  try {
+    if (!OP3_TOKEN || !OP3_SHOW_UUID) {
+      return res.json({ error: 'Faltan las variables de entorno OP3_TOKEN y OP3_SHOW_UUID en Render.' });
+    }
+    const url = `https://op3.dev/api/1/queries/episode-download-counts?showUuid=${OP3_SHOW_UUID}&token=${OP3_TOKEN}`;
+    const r   = await fetch(url);
+    if (!r.ok) {
+      const text = await r.text();
+      console.error('OP3 error:', r.status, text);
+      return res.json({ error: `OP3 respondió con error ${r.status}. Verifica el token y el show UUID.` });
+    }
+    const data = await r.json();
+    res.json({ episodes: data.episodes || [] });
+  } catch (err) {
+    console.error('Stats error:', err);
+    res.status(500).json({ error: 'Error al obtener estadísticas de OP3.' });
   }
 });
 
