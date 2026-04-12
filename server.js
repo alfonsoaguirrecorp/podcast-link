@@ -366,15 +366,26 @@ app.get('/api/stats', async (req, res) => {
         return diffDays < 2 || o.title === ep.title;
       });
       if (match) {
-        const best = (a, b) => (a != null && a > 0) ? a : (b != null && b > 0) ? b : null;
+        // Para downloads7/30/All: usar el mayor valor entre OP3 y CSV.
+        // OP3 solo cuenta desde que se puso el prefijo, Libsyn tiene el historial completo.
+        const higher = (a, b) => {
+          const va = (a != null && a > 0) ? a : null;
+          const vb = (b != null && b > 0) ? b : null;
+          if (va != null && vb != null) return Math.max(va, vb);
+          return va ?? vb;
+        };
+        // downloads1/3 solo los usamos de OP3 si el episodio es nuevo (≤ 14 días)
+        const epDays = ep.pubdate
+          ? (Date.now() - new Date(ep.pubdate).getTime()) / 86400000
+          : 999;
         return {
           ...ep,
-          downloads1:   match.downloads1   || null,
-          downloads3:   match.downloads3   || null,
-          downloads7:   best(match.downloads7,   ep.downloads7),
-          downloads30:  best(match.downloads30,  ep.downloads30),
-          downloadsAll: best(match.downloadsAll, ep.downloadsAll),
-          source: 'op3'
+          downloads1:   epDays <= 14 ? (match.downloads1   || null) : null,
+          downloads3:   epDays <= 14 ? (match.downloads3   || null) : null,
+          downloads7:   higher(match.downloads7,   ep.downloads7),
+          downloads30:  higher(match.downloads30,  ep.downloads30),
+          downloadsAll: higher(match.downloadsAll, ep.downloadsAll),
+          source: epDays <= 14 ? 'op3' : 'libsyn'
         };
       }
       return ep;
