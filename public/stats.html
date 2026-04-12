@@ -142,6 +142,21 @@
     .badge.red    { background: #3d1a1a; color: #f87171; }
     .badge.gray   { background: #2a2a2a; color: #888; }
 
+    .action-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .action-tag.green  { background: #1a3d1f; color: #4ade80; }
+    .action-tag.yellow { background: #2a2a2a; color: #aaa; }
+    .action-tag.red    { background: #3d1a1a; color: #f87171; }
+    .action-tag.gray   { background: #222; color: #666; font-weight: 400; font-style: italic; }
+
     .source-tag {
       display: inline-block;
       font-size: 0.65rem;
@@ -258,6 +273,7 @@
             <th class="num">30 días</th>
             <th class="num">Total</th>
             <th>vs. promedio</th>
+            <th>estado</th>
           </tr>
         </thead>
         <tbody id="stats-body">
@@ -308,6 +324,27 @@
         return `${fmt(ep.downloadsAll)} <small style="color:#666;font-size:.75rem">día&nbsp;${ep.daysOld}</small>`;
       }
       return '—';
+    }
+
+    function actionTag(ep, avg7) {
+      let val = ep.downloads7;
+      let projected = false;
+
+      if ((val == null || val === 0) && ep.downloadsAll != null && ep.daysOld >= 1 && ep.daysOld < 7) {
+        val = Math.round(ep.downloadsAll / ep.daysOld * 7);
+        projected = true;
+      }
+
+      if (val == null || val === 0 || avg7 == null) {
+        return `<span class="action-tag gray">Sin datos aún</span>`;
+      }
+
+      const pct  = (val - avg7) / avg7;
+      const note = projected ? ' <small style="opacity:.6;font-size:.65rem">proy.</small>' : '';
+
+      if (pct >= 0.2)  return `<span class="action-tag green">Creciendo más que el promedio${note}</span>`;
+      if (pct >= -0.2) return `<span class="action-tag yellow">Promedio alcanzado${note}</span>`;
+      return `<span class="action-tag red">Necesita promoción${note}</span>`;
     }
 
     async function load() {
@@ -379,6 +416,7 @@
             <td class="num">${fmt(ep.downloads30)}</td>
             <td class="num">${fmt(ep.downloadsAll)}</td>
             <td>${badge(ep, avg7)}</td>
+            <td>${actionTag(ep, avg7)}</td>
           </tr>
         `).join('');
 
