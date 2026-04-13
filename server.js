@@ -2,6 +2,7 @@ const express = require('express');
 const fetch   = require('node-fetch');
 const path    = require('path');
 const fs      = require('fs');
+const crypto  = require('crypto');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,9 @@ const REDIS_TOKEN         = process.env.UPSTASH_REDIS_REST_TOKEN;
 const REDIS_KEY           = 'episode-links';
 const OP3_TOKEN           = process.env.OP3_TOKEN;
 const OP3_SHOW_UUID       = process.env.OP3_SHOW_UUID;
+const STATS_USER          = process.env.STATS_USER  || 'admin';
+const STATS_PASS          = process.env.STATS_PASS  || 'podcast2024';
+const STATS_SECRET        = process.env.STATS_SECRET || 'changeme';
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use((req, res, next) => {
@@ -22,7 +26,7 @@ app.use((req, res, next) => {
   next();
 });
 app.get('/embed', (req, res) => res.sendFile(path.join(__dirname, 'public', 'embed.html')));
-app.get('/stats', (req, res) => res.sendFile(path.join(__dirname, 'public', 'stats.html')));
+app.get('/stats', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'stats.html')));
 
 // ── Upstash Redis helpers ─────────────────────────────────────────────────────
 async function redisGet(key) {
@@ -307,6 +311,81 @@ app.get('/api/episodes', async (req, res) => {
   }
 });
 
+// ── Auth helpers ──────────────────────────────────────────────────────────
+function makeToken() {
+  return crypto.createHmac('sha256', STATS_SECRET)
+    .update(STATS_USER + ':' + STATS_PASS)
+    .digest('hex');
+}
+
+function getCookie(req, name) {
+  const str = req.headers.cookie || '';
+  const match = str.split(';').map(c => c.trim()).find(c => c.startsWith(name + '='));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+}
+
+function requireAuth(req, res, next) {
+  if (getCookie(req, 'stats_auth') === makeToken()) return next();
+  res.redirect('/stats/login');
+}
+
+app.use(express.urlencoded({ extended: false }));
+
+app.get('/stats/login', (req, res) => {
+  const err = req.query.error ? '<p style="color:#f87171;margin:0 0 16px">Usuario o contraseña incorrectos.</p>' : '';
+  res.send(`<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Acceso — Estadísticas</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:#0f0f0f;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+         display:flex;align-items:center;justify-content:center;min-height:100vh}
+    .card{background:#1a1a1a;border-radius:16px;padding:36px 32px;width:100%;max-width:360px}
+    h1{font-size:1.2rem;margin-bottom:24px;color:#fff}
+    label{display:block;font-size:.78rem;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
+    input{width:100%;background:#111;border:1px solid #333;border-radius:8px;padding:10px 14px;
+          color:#fff;font-size:.95rem;margin-bottom:16px;outline:none}
+    input:focus{border-color:#555}
+    button{width:100%;background:#fff;color:#000;border:none;border-radius:8px;
+           padding:12px;font-size:.95rem;font-weight:600;cursor:pointer;margin-top:4px}
+    button:hover{background:#ddd}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Estadísticas del podcast</h1>
+    ${err}
+    <form method="POST" action="/stats/login">
+      <label>Usuario</label>
+      <input type="text" name="user" autocomplete="username" required/>
+      <label>Contraseña</label>
+      <input type="password" name="pass" autocomplete="current-password" required/>
+      <button type="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>`);
+});
+
+app.post('/stats/login', (req, res) => {
+  const { user, pass } = req.body;
+  if (user === STATS_USER && pass === STATS_PASS) {
+    const token   = makeToken();
+    const maxAge  = 30 * 24 * 60 * 60; // 30 días en segundos
+    res.setHeader('Set-Cookie', `stats_auth=${token}; Max-Age=${maxAge}; Path=/; HttpOnly; SameSite=Lax`);
+    return res.redirect('/stats');
+  }
+  res.redirect('/stats/login?error=1');
+});
+
+app.get('/stats/logout', (req, res) => {
+  res.setHeader('Set-Cookie', 'stats_auth=; Max-Age=0; Path=/; HttpOnly');
+  res.redirect('/stats/login');
+});
+
 // ── CSV historical data ────────────────────────────────────────────────────
 function parseCSVLine(line) {
   const result = [];
@@ -339,7 +418,7 @@ function loadHistoricalCSV() {
 }
 
 // ── OP3 Stats endpoint ────────────────────────────────────────────────────
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', requireAuth, async (req, res) => {
   try {
     // 1. Historical CSV data
     const csvEpisodes = loadHistoricalCSV();
@@ -426,7 +505,7 @@ app.get('/api/stats', async (req, res) => {
 });
 
 // ── OP3 Trend endpoint ────────────────────────────────────────────────────
-app.get('/api/trend', async (req, res) => {
+app.get('/api/trend', requireAuth, async (req, res) => {
   try {
     if (!OP3_TOKEN || !OP3_SHOW_UUID) {
       return res.json({ error: 'Faltan variables OP3.' });
