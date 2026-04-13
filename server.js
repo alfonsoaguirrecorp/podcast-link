@@ -457,13 +457,18 @@ app.get('/api/stats', requireAuth, async (req, res) => {
         const epDays = ep.pubdate
           ? (Date.now() - new Date(ep.pubdate).getTime()) / 86400000
           : 999;
+        // downloadsAll = CSV (histórico) + OP3 (desde que se puso el prefijo)
+        // Los primeros 1-2 días tienen un overlap mínimo pero captura todo el futuro
+        const csvTotal = ep.downloadsAll   || 0;
+        const op3Total = match.downloadsAll || 0;
+        const totalAll = csvTotal + op3Total > 0 ? csvTotal + op3Total : null;
         return {
           ...ep,
           downloads1:   epDays <= 14 ? (match.downloads1   || null) : null,
           downloads3:   epDays <= 14 ? (match.downloads3   || null) : null,
           downloads7:   higher(match.downloads7,   ep.downloads7),
           downloads30:  higher(match.downloads30,  ep.downloads30),
-          downloadsAll: higher(match.downloadsAll, ep.downloadsAll),
+          downloadsAll: totalAll,
           source: epDays <= 14 ? 'op3' : 'libsyn'
         };
       }
