@@ -330,30 +330,6 @@
       return new Date(iso).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
     }
 
-    function badge(ep, avg7) {
-      let val = ep.downloads7;
-      let projected = false;
-
-      // Si no hay datos de 7 días pero el episodio tiene menos de 7 días,
-      // proyectar linealmente con el total actual
-      if ((val == null || val === 0) && ep.downloadsAll != null && ep.daysOld != null && ep.daysOld >= 1 && ep.daysOld < 7) {
-        val = Math.round(ep.downloadsAll / ep.daysOld * 7);
-        projected = true;
-      }
-
-      if (val == null || val === 0 || avg7 == null) {
-        return `<span class="badge gray"><span class="dot"></span>Sin datos</span>`;
-      }
-
-      const pct  = (val - avg7) / avg7;
-      const sign = pct >= 0 ? '+' : '';
-      const tag  = projected ? ' <small style="opacity:.7;font-size:.65rem">proy.</small>' : '';
-
-      if (pct >= 0.2)  return `<span class="badge green"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
-      if (pct >= -0.2) return `<span class="badge yellow"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
-      return `<span class="badge red"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
-    }
-
     function fmtD7(ep) {
       if (ep.downloads7 != null && ep.downloads7 > 0) return fmt(ep.downloads7);
       if (ep.downloadsAll != null && ep.daysOld != null && ep.daysOld >= 1 && ep.daysOld < 7) {
@@ -362,21 +338,54 @@
       return '—';
     }
 
-    function actionTag(ep, avg7) {
-      let val = ep.downloads7;
-      let projected = false;
+    // Elige el mejor dato disponible según los días del episodio.
+    // Prioridad: día 1 real > día 3 real > día 7 real > proyección lineal.
+    function getMetric(ep) {
+      const d = ep.daysOld;
+      if (d == null) return { val: null, avg: null };
 
-      if ((val == null || val === 0) && ep.downloadsAll != null && ep.daysOld >= 1 && ep.daysOld < 7) {
-        val = Math.round(ep.downloadsAll / ep.daysOld * 7);
-        projected = true;
+      // Día 7 o más: usar downloads7
+      if (d >= 7 && ep.downloads7 > 0 && ep.avgAtTime != null) {
+        return { val: ep.downloads7, avg: ep.avgAtTime, label: '7d' };
       }
 
-      if (val == null || val === 0 || avg7 == null) {
-        return `<span class="action-tag gray">Sin datos aún</span>`;
+      // Día 3-6: usar downloads3 si hay promedio de día 3
+      if (d >= 3 && ep.downloads3 > 0 && ep.avgAtTimeD3 != null) {
+        return { val: ep.downloads3, avg: ep.avgAtTimeD3, label: '3d' };
       }
 
-      const pct  = (val - avg7) / avg7;
-      const note = projected ? ' <small style="opacity:.6;font-size:.65rem">proy.</small>' : '';
+      // Día 1-2: usar downloads1 si hay promedio de día 1
+      if (d >= 1 && ep.downloads1 > 0 && ep.avgAtTimeD1 != null) {
+        return { val: ep.downloads1, avg: ep.avgAtTimeD1, label: '1d' };
+      }
+
+      // Fallback: proyección lineal con downloadsAll vs promedio d7
+      if (d >= 1 && d < 7 && ep.downloadsAll > 0 && ep.avgAtTime != null) {
+        return { val: Math.round(ep.downloadsAll / d * 7), avg: ep.avgAtTime, label: 'proy.', projected: true };
+      }
+
+      return { val: null, avg: null };
+    }
+
+    function badge(ep) {
+      const { val, avg, label, projected } = getMetric(ep);
+      if (!val || !avg) return `<span class="badge gray"><span class="dot"></span>Sin datos</span>`;
+
+      const pct  = (val - avg) / avg;
+      const sign = pct >= 0 ? '+' : '';
+      const tag  = `<small style="opacity:.6;font-size:.65rem;margin-left:2px">${label}</small>`;
+
+      if (pct >= 0.2)  return `<span class="badge green"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
+      if (pct >= -0.2) return `<span class="badge yellow"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
+      return `<span class="badge red"><span class="dot"></span>${sign}${Math.round(pct*100)}%${tag}</span>`;
+    }
+
+    function actionTag(ep) {
+      const { val, avg, label, projected } = getMetric(ep);
+      if (!val || !avg) return `<span class="action-tag gray">Sin datos aún</span>`;
+
+      const pct  = (val - avg) / avg;
+      const note = `<small style="opacity:.6;font-size:.65rem"> ${label}</small>`;
 
       if (pct >= 0.2)  return `<span class="action-tag green">Creciendo más que el promedio${note}</span>`;
       if (pct >= -0.2) return `<span class="action-tag yellow">Promedio alcanzado${note}</span>`;
@@ -421,17 +430,19 @@
           .sort((a, b) => new Date(a.pubdate) - new Date(b.pubdate));
 
         let runSum = 0, runCount = 0;
-        for (const ep of byDate) {
-          // avgAtTime = promedio de todos los episodios anteriores a este
-          ep.avgAtTime = runCount >= 3
-            ? Math.round(runSum / runCount)
-            : null; // sin referencia si hay menos de 3 episodios previos
+        let runSumD1 = 0, runCountD1 = 0;
+        let runSumD3 = 0, runCountD3 = 0;
 
-          // Agregar este episodio al acumulado para el siguiente
-          if (ep.downloads7 != null && ep.downloads7 > 0) {
-            runSum  += ep.downloads7;
-            runCount++;
-          }
+        for (const ep of byDate) {
+          // Promedios al momento de publicación (solo episodios anteriores)
+          ep.avgAtTime   = runCount   >= 3 ? Math.round(runSum   / runCount)   : null;
+          ep.avgAtTimeD1 = runCountD1 >= 2 ? Math.round(runSumD1 / runCountD1) : null;
+          ep.avgAtTimeD3 = runCountD3 >= 2 ? Math.round(runSumD3 / runCountD3) : null;
+
+          // Acumular para el siguiente episodio
+          if (ep.downloads7  != null && ep.downloads7  > 0) { runSum   += ep.downloads7;  runCount++;   }
+          if (ep.downloads1  != null && ep.downloads1  > 0) { runSumD1 += ep.downloads1;  runCountD1++; }
+          if (ep.downloads3  != null && ep.downloads3  > 0) { runSumD3 += ep.downloads3;  runCountD3++; }
         }
 
         // Update subtitle
@@ -462,8 +473,8 @@
             <td class="num">${fmtD7(ep)}</td>
             <td class="num">${fmt(ep.downloads30)}</td>
             <td class="num">${fmt(ep.downloadsAll)}</td>
-            <td>${badge(ep, ep.avgAtTime)}</td>
-            <td>${actionTag(ep, ep.avgAtTime)}</td>
+            <td>${badge(ep)}</td>
+            <td>${actionTag(ep)}</td>
           </tr>
         `).join('');
 
