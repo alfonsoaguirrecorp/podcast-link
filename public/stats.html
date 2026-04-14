@@ -359,9 +359,15 @@
         return { val: ep.downloads1, avg: ep.avgAtTimeD1, label: '1d' };
       }
 
-      // Fallback: proyección lineal con downloadsAll vs promedio d7
-      if (d >= 1 && d < 7 && ep.downloadsAll > 0 && ep.avgAtTime != null) {
-        return { val: Math.round(ep.downloadsAll / d * 7), avg: ep.avgAtTime, label: 'proy.', projected: true };
+      // Fallback: usar downloadsAll vs promedio d7
+      // d < 7: proyección lineal / d >= 7 con downloads7 null: usar total directamente
+      if (ep.downloadsAll > 0 && ep.avgAtTime != null) {
+        if (d >= 1 && d < 7) {
+          return { val: Math.round(ep.downloadsAll / d * 7), avg: ep.avgAtTime, label: 'proy.', projected: true };
+        }
+        if (d >= 7) {
+          return { val: ep.downloadsAll, avg: ep.avgAtTime, label: 'total' };
+        }
       }
 
       return { val: null, avg: null };
