@@ -111,7 +111,7 @@
     .then(data => {
       const all = data.episodes || [];
       // Filter to episodes #35 and #48 — match /#35[ :,]/ and /#48[ :,]/
-      const target = all.filter(ep => /\#(35|48)[\s:,\-]/.test(ep.trackName));
+      const target = all.filter(ep => /\#(35|48)(?!\d)/.test(ep.trackName));
 
       // Sort: #48 first, then #35
       target.sort((a, b) => {
