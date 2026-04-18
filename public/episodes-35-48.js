@@ -1,5 +1,4 @@
 (function () {
-  const API = 'https://podcast-link.onrender.com/api/episodes?offset=0&limit=200';
   const SPOTIFY_SHOW = 'https://open.spotify.com/show/2YNRodcHc7nTjqVUzMRDB4';
   const APPLE_SHOW   = 'https://podcasts.apple.com/us/podcast/algo-m%C3%A1s-que-contarte-con-alfonso-aguirre/id1493350313?l=es-MX';
   const YOUTUBE_LIST = 'https://www.youtube.com/playlist?list=PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
@@ -106,11 +105,13 @@
   // ── Fetch & render ────────────────────────────────────────────────────────
   container.innerHTML = '<div class="amqc-list"><div style="height:68px;background:#ececec;border-radius:13px;animation:amqc-pulse 1.5s ease-in-out infinite"></div><div style="height:68px;background:#ececec;border-radius:13px;animation:amqc-pulse 1.5s ease-in-out infinite"></div></div><style>@keyframes amqc-pulse{0%,100%{opacity:1}50%{opacity:.45}}</style>';
 
-  fetch(API)
-    .then(r => r.json())
-    .then(data => {
-      const all = data.episodes || [];
-      // Filter to episodes #35 and #48 — match /#35[ :,]/ and /#48[ :,]/
+  // Fetch both pages in parallel (server caps at 50 per request)
+  Promise.all([
+    fetch('https://podcast-link.onrender.com/api/episodes?offset=0&limit=50').then(r => r.json()),
+    fetch('https://podcast-link.onrender.com/api/episodes?offset=50&limit=50').then(r => r.json())
+  ])
+    .then(([page1, page2]) => {
+      const all = [...(page1.episodes || []), ...(page2.episodes || [])];
       const target = all.filter(ep => /\#(35|48)(?!\d)/.test(ep.trackName));
 
       // Sort: #48 first, then #35
