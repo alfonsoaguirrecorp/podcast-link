@@ -502,6 +502,13 @@ app.get('/api/stats', requireAuth, async (req, res) => {
         : null;
     }
 
+    // 7. Manual overrides — corregir episodios afectados por la transición de estadísticas
+    // Ep #84: los primeros 7 días reales fueron 906 (hubo inflación por bots al poner el prefijo OP3)
+    const ep84 = merged.find(ep => /\#84[\s:,\-]|#84$/.test(ep.title));
+    if (ep84) {
+      ep84.downloads7 = 906;
+    }
+
     res.json({ episodes: merged });
   } catch (err) {
     console.error('Stats error:', err);
