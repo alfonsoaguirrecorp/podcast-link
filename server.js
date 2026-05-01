@@ -298,8 +298,13 @@ async function buildAllEpisodes() {
 
   // Enriquecer con datos de iTunes donde ya estén disponibles
   const enrichedEps = primaryEps.map(ep => {
+    const nEp = epNum(ep.trackName);
     const ie = itunesMap.get(ep.trackName)
-      || [...itunesMap.values()].find(i => titlesMatch(i.trackName, ep.trackName));
+      || [...itunesMap.values()].find(i => {
+          const ni = epNum(i.trackName);
+          if (nEp && ni && nEp !== ni) return false; // números distintos → no match
+          return titlesMatch(i.trackName, ep.trackName);
+        });
     return ie ? {
       ...ep,
       artworkUrl600:   ie.artworkUrl600   || ep.artworkUrl600,
