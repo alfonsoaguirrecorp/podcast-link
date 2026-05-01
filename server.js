@@ -10,6 +10,8 @@ const PORT = process.env.PORT || 3000;
 const PODCAST_ID          = '1493350313';
 const SPOTIFY_SHOW_ID     = '2YNRodcHc7nTjqVUzMRDB4';
 const YOUTUBE_PLAYLIST_ID = 'PLcjbYuEvmLRm3Ff2fvpnsq9MkREPV0zdt';
+const RSS_URL             = 'https://feeds.libsyn.com/237647/rss';
+const SHOW_ARTWORK        = 'https://is1-ssl.mzstatic.com/image/thumb/Podcasts116/v4/bf/ec/58/bfec583a-abc7-e2ce-98e7-ddad6b2827cc/mza_16516226109485693154.png/600x600bb.jpg';
 const REDIS_URL           = process.env.UPSTASH_REDIS_REST_URL;
 const REDIS_TOKEN         = process.env.UPSTASH_REDIS_REST_TOKEN;
 const REDIS_KEY           = 'episode-links';
@@ -210,19 +212,102 @@ async function fetchYouTubeVideos() {
   }
 }
 
+// ── RSS feed (fuente principal — siempre al día) ──────────────────────────────
+async function fetchRSSEpisodes() {
+  try {
+    const res = await fetch(RSS_URL, { redirect: 'follow' });
+    if (!res.ok) return [];
+    const xml = await res.text();
+
+    const episodes = [];
+    for (const [, block] of xml.matchAll(/<item>([\s\S]*?)<\/item>/g)) {
+      const getTag = tag => {
+        const m = new RegExp(
+          `<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/${tag}>|<${tag}[^>]*>([^<]*)<\\/${tag}>`
+        ).exec(block);
+        return m ? decodeHtml((m[1] || m[2] || '').trim()) : '';
+      };
+      const getAttr = (tag, attr) => {
+        const m = new RegExp(`<${tag}[^>]*\\s${attr}="([^"]*)"`, 'i').exec(block);
+        return m ? m[1] : '';
+      };
+
+      const title   = getTag('title');
+      const pubDate = getTag('pubDate');
+      if (!title || !pubDate) continue;
+
+      // Duración: HH:MM:SS, MM:SS o segundos
+      const dur   = getTag('itunes:duration');
+      let trackTimeMillis = 0;
+      if (dur) {
+        const parts = dur.split(':').map(Number);
+        if (parts.length === 3)      trackTimeMillis = (parts[0]*3600 + parts[1]*60 + parts[2]) * 1000;
+        else if (parts.length === 2) trackTimeMillis = (parts[0]*60  + parts[1]) * 1000;
+        else if (!isNaN(+dur))       trackTimeMillis = +dur * 1000;
+      }
+
+      const artwork = getAttr('itunes:image', 'href') || SHOW_ARTWORK;
+      episodes.push({
+        trackName:       title,
+        releaseDate:     new Date(pubDate).toISOString(),
+        trackTimeMillis,
+        artworkUrl600:   artwork,
+        artworkUrl160:   artwork,
+        wrapperType:     'podcastEpisode',
+        kind:            'podcast-episode'
+      });
+    }
+    return episodes;
+  } catch (e) {
+    console.error('RSS fetch error:', e.message);
+    return [];
+  }
+}
+
 // ── Construye lista de episodios ──────────────────────────────────────────────
 async function buildAllEpisodes() {
-  const [itunesRes, youtubeVideos] = await Promise.all([
-    fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=200&country=mx`),
+  // RSS (instantáneo) + iTunes (para enriquecer artwork y link de Apple) + YouTube — en paralelo
+  const [itunesRes, rssEps, youtubeVideos] = await Promise.all([
+    fetch(`https://itunes.apple.com/lookup?id=${PODCAST_ID}&entity=podcastEpisode&limit=200&country=mx`).catch(() => null),
+    fetchRSSEpisodes(),
     fetchYouTubeVideos()
   ]);
 
-  const itunesData = await itunesRes.json();
-  const results    = itunesData.results || [];
-  const show       = results.find(r => r.wrapperType === 'track' && r.kind === 'podcast') || results[0];
-  const itunesEps  = results
-    .filter(r => r.wrapperType === 'podcastEpisode' || r.kind === 'podcast-episode')
-    .sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
+  // iTunes: opcional, solo para artworkUrl600 y trackViewUrl
+  let show = null;
+  const itunesMap = new Map();
+  if (itunesRes && itunesRes.ok) {
+    try {
+      const results = (await itunesRes.json()).results || [];
+      show = results.find(r => r.wrapperType === 'track' && r.kind === 'podcast') || results[0];
+      for (const ep of results.filter(r => r.wrapperType === 'podcastEpisode' || r.kind === 'podcast-episode')) {
+        itunesMap.set(ep.trackName, ep);
+      }
+    } catch (e) { console.error('iTunes parse error:', e.message); }
+  }
+
+  // Fallback de show si iTunes está lento
+  if (!show) {
+    show = { collectionName: 'Algo Más Que Contarte con Alfonso Aguirre', artworkUrl600: SHOW_ARTWORK, artworkUrl100: SHOW_ARTWORK };
+  }
+
+  // Lista principal: RSS (siempre fresco). Fallback: iTunes
+  const primaryEps = rssEps.length > 0
+    ? rssEps
+    : [...itunesMap.values()].sort((a, b) => new Date(b.releaseDate) - new Date(a.releaseDate));
+
+  // Enriquecer con datos de iTunes donde ya estén disponibles
+  const enrichedEps = primaryEps.map(ep => {
+    const ie = itunesMap.get(ep.trackName)
+      || [...itunesMap.values()].find(i => titlesMatch(i.trackName, ep.trackName));
+    return ie ? {
+      ...ep,
+      artworkUrl600:   ie.artworkUrl600   || ep.artworkUrl600,
+      artworkUrl160:   ie.artworkUrl160   || ep.artworkUrl160,
+      trackViewUrl:    ie.trackViewUrl,
+      trackTimeMillis: ie.trackTimeMillis || ep.trackTimeMillis,
+    } : ep;
+  });
 
   // YouTube maps
   const youtubeByNum = {}, youtubeByTitle = [];
@@ -250,11 +335,10 @@ async function buildAllEpisodes() {
     }
   }
 
-  // Construir episodios con sus links
+  // Construir episodios con sus links de Spotify y YouTube
   const allEpisodes = [];
-  let foundNew = false;
 
-  for (const ep of itunesEps) {
+  for (const ep of enrichedEps) {
     const n = epNum(ep.trackName || '');
 
     // Spotify: buscar en links conocidos primero
@@ -271,7 +355,6 @@ async function buildAllEpisodes() {
       spotifyUrl  = await findNewSpotifyEpisode(token, ep.trackName);
       if (spotifyUrl) {
         knownSpotifyLinks[ep.trackName] = spotifyUrl;
-        foundNew  = true;
         needsSave = true;
         console.log(`✅ Link de Spotify guardado para "${ep.trackName}"`);
       }
