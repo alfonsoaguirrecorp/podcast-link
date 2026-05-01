@@ -653,11 +653,51 @@ async function kajabiGet(path) {
   const token = await getKajabiToken();
   if (!token) throw new Error('Sin credenciales de Kajabi (verifica KAJABI_API_KEY y KAJABI_API_SECRET en Render)');
   const res = await fetch(`${KAJABI_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.api+json' }
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
   });
   if (!res.ok) throw new Error(`Kajabi ${res.status}: ${await res.text()}`);
   return res.json();
 }
+
+// ── Kajabi debug (temporal) ───────────────────────────────────────────────────
+app.get('/api/kajabi/debug', requireAuth, async (req, res) => {
+  const out = {};
+  try {
+    const k = process.env.KAJABI_API_KEY, s = process.env.KAJABI_API_SECRET;
+    out.credenciales = k ? `key=${k.slice(0,6)}… secret=${s?.slice(0,6)}…` : 'NO ESTÁN en Render';
+
+    const tokenRes = await fetch(`${KAJABI_BASE}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: k, client_secret: s })
+    });
+    const tokenData = await tokenRes.json();
+    out.token_status = tokenRes.status;
+    out.token_ok     = !!tokenData.access_token;
+    out.token_error  = tokenData.error || tokenData.error_description || null;
+
+    if (tokenData.access_token) {
+      const sitesRes  = await fetch(`${KAJABI_BASE}/sites`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
+      const sitesData = await sitesRes.json();
+      out.sites_status = sitesRes.status;
+      out.sites_raw    = sitesData;
+
+      const siteId = sitesData.data?.[0]?.id;
+      if (siteId) {
+        const tagsRes  = await fetch(`${KAJABI_BASE}/contact_tags?filter[site_id]=${siteId}&page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
+        const tagsData = await tagsRes.json();
+        out.tags_status = tagsRes.status;
+        out.tags_raw    = tagsData;
+
+        const formsRes  = await fetch(`${KAJABI_BASE}/forms?filter[site_id]=${siteId}&page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
+        const formsData = await formsRes.json();
+        out.forms_status = formsRes.status;
+        out.forms_raw    = formsData;
+      }
+    }
+  } catch (e) { out.exception = e.message; }
+  res.json(out);
+});
 
 async function getKajabiSiteId() {
   if (kajabiSiteId) return kajabiSiteId;
