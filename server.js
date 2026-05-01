@@ -660,6 +660,24 @@ async function kajabiGet(path) {
   return res.json();
 }
 
+// ── Kajabi debug ─────────────────────────────────────────────────────────────
+app.get('/api/kajabi/debug', requireAuth, async (req, res) => {
+  try {
+    const token = await getKajabiToken();
+    const hdrs  = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.api+json' };
+    const [t, f] = await Promise.all([
+      fetch(`${KAJABI_BASE}/contact_tags?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`, { headers: hdrs }),
+      fetch(`${KAJABI_BASE}/forms?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`,        { headers: hdrs })
+    ]);
+    res.json({
+      site_id: KAJABI_SITE_ID,
+      token_ok: !!token,
+      tags:  { status: t.status, body: await t.json() },
+      forms: { status: f.status, body: await f.json() }
+    });
+  } catch (e) { res.json({ error: e.message }); }
+});
+
 // ── Campaigns (stored in Redis) ───────────────────────────────────────────────
 const CAMPAIGNS_KEY = 'amqc-campaigns';
 async function loadCampaigns()          { return (await redisGet(CAMPAIGNS_KEY)) || []; }
