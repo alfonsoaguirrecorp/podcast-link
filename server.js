@@ -505,99 +505,78 @@ function loadHistoricalCSV() {
   }).filter(e => e.title && e.pubdate);
 }
 
+// ── Stats computation (shared by /api/stats and /api/campaigns/:id/stats) ────
+async function computeEpisodeStats() {
+  const csvEpisodes = loadHistoricalCSV();
+
+  let op3Episodes = [];
+  if (OP3_TOKEN && OP3_SHOW_UUID) {
+    try {
+      const r = await fetch(`https://op3.dev/api/1/queries/episode-download-counts?showUuid=${OP3_SHOW_UUID}&token=${OP3_TOKEN}`);
+      if (r.ok) op3Episodes = (await r.json()).episodes || [];
+    } catch (err) { console.error('OP3 fetch error:', err); }
+  }
+
+  const merged = csvEpisodes.map(ep => {
+    const match = op3Episodes.find(o => {
+      const diffDays = Math.abs(new Date(o.pubdate) - new Date(ep.pubdate)) / 86400000;
+      return diffDays < 2 || o.title === ep.title;
+    });
+    if (match) {
+      const higher = (a, b) => {
+        const va = (a != null && a > 0) ? a : null;
+        const vb = (b != null && b > 0) ? b : null;
+        if (va != null && vb != null) return Math.max(va, vb);
+        return va ?? vb;
+      };
+      const epDays  = ep.pubdate ? (Date.now() - new Date(ep.pubdate).getTime()) / 86400000 : 999;
+      const csvTotal = ep.downloadsAll   || 0;
+      const op3Total = match.downloadsAll || 0;
+      return {
+        ...ep,
+        downloads1:   epDays <= 14 ? (match.downloads1 || null) : null,
+        downloads3:   epDays <= 14 ? (match.downloads3 || null) : null,
+        downloads7:   higher(match.downloads7,  ep.downloads7),
+        downloads30:  higher(match.downloads30, ep.downloads30),
+        downloadsAll: csvTotal + op3Total > 0 ? csvTotal + op3Total : null,
+        source: epDays <= 14 ? 'op3' : 'libsyn'
+      };
+    }
+    return ep;
+  });
+
+  for (const o of op3Episodes) {
+    const already = merged.find(ep => {
+      const diffDays = Math.abs(new Date(o.pubdate) - new Date(ep.pubdate)) / 86400000;
+      return diffDays < 2 || o.title === ep.title;
+    });
+    if (!already) {
+      merged.unshift({
+        title: o.title, pubdate: o.pubdate,
+        downloads1: o.downloads1 ?? null, downloads3: o.downloads3 ?? null,
+        downloads7: o.downloads7 ?? null, downloads30: o.downloads30 ?? null,
+        downloadsAll: o.downloadsAll ?? null, source: 'op3'
+      });
+    }
+  }
+
+  merged.sort((a, b) => new Date(b.pubdate) - new Date(a.pubdate));
+  const now = Date.now();
+  for (const ep of merged) {
+    ep.daysOld = ep.pubdate ? Math.floor((now - new Date(ep.pubdate).getTime()) / 86400000) : null;
+  }
+
+  // Override manual: ep #84 inflado por bots al poner prefijo OP3
+  const ep84 = merged.find(ep => /\#84[\s:,\-]|#84$/.test(ep.title));
+  if (ep84) ep84.downloads7 = 906;
+
+  return merged;
+}
+
 // ── OP3 Stats endpoint ────────────────────────────────────────────────────
 app.get('/api/stats', requireAuth, async (req, res) => {
   try {
-    // 1. Historical CSV data
-    const csvEpisodes = loadHistoricalCSV();
-
-    // 2. OP3 data (optional — graceful fallback if missing)
-    let op3Episodes = [];
-    if (OP3_TOKEN && OP3_SHOW_UUID) {
-      try {
-        const url = `https://op3.dev/api/1/queries/episode-download-counts?showUuid=${OP3_SHOW_UUID}&token=${OP3_TOKEN}`;
-        const r   = await fetch(url);
-        if (r.ok) {
-          const data = await r.json();
-          op3Episodes = data.episodes || [];
-        }
-      } catch (err) {
-        console.error('OP3 fetch error:', err);
-      }
-    }
-
-    // 3. Merge: match OP3 episodes to CSV by pubdate (±2 days) or exact title
-    const merged = csvEpisodes.map(ep => {
-      const match = op3Episodes.find(o => {
-        const diffDays = Math.abs(new Date(o.pubdate) - new Date(ep.pubdate)) / 86400000;
-        return diffDays < 2 || o.title === ep.title;
-      });
-      if (match) {
-        // Para downloads7/30/All: usar el mayor valor entre OP3 y CSV.
-        // OP3 solo cuenta desde que se puso el prefijo, Libsyn tiene el historial completo.
-        const higher = (a, b) => {
-          const va = (a != null && a > 0) ? a : null;
-          const vb = (b != null && b > 0) ? b : null;
-          if (va != null && vb != null) return Math.max(va, vb);
-          return va ?? vb;
-        };
-        // downloads1/3 solo los usamos de OP3 si el episodio es nuevo (≤ 14 días)
-        const epDays = ep.pubdate
-          ? (Date.now() - new Date(ep.pubdate).getTime()) / 86400000
-          : 999;
-        // downloadsAll = CSV (histórico) + OP3 (desde que se puso el prefijo)
-        // Los primeros 1-2 días tienen un overlap mínimo pero captura todo el futuro
-        const csvTotal = ep.downloadsAll   || 0;
-        const op3Total = match.downloadsAll || 0;
-        const totalAll = csvTotal + op3Total > 0 ? csvTotal + op3Total : null;
-        return {
-          ...ep,
-          downloads1:   epDays <= 14 ? (match.downloads1   || null) : null,
-          downloads3:   epDays <= 14 ? (match.downloads3   || null) : null,
-          downloads7:   higher(match.downloads7,   ep.downloads7),
-          downloads30:  higher(match.downloads30,  ep.downloads30),
-          downloadsAll: totalAll,
-          source: epDays <= 14 ? 'op3' : 'libsyn'
-        };
-      }
-      return ep;
-    });
-
-    // 4. Add OP3 episodes not yet in CSV (brand new)
-    for (const o of op3Episodes) {
-      const already = merged.find(ep => {
-        const diffDays = Math.abs(new Date(o.pubdate) - new Date(ep.pubdate)) / 86400000;
-        return diffDays < 2 || o.title === ep.title;
-      });
-      if (!already) {
-        merged.unshift({
-          title: o.title, pubdate: o.pubdate,
-          downloads1: o.downloads1 ?? null, downloads3: o.downloads3 ?? null,
-          downloads7: o.downloads7 ?? null, downloads30: o.downloads30 ?? null,
-          downloadsAll: o.downloadsAll ?? null, source: 'op3'
-        });
-      }
-    }
-
-    // 5. Sort newest first
-    merged.sort((a, b) => new Date(b.pubdate) - new Date(a.pubdate));
-
-    // 6. Add daysOld to each episode
-    const now = Date.now();
-    for (const ep of merged) {
-      ep.daysOld = ep.pubdate
-        ? Math.floor((now - new Date(ep.pubdate).getTime()) / 86400000)
-        : null;
-    }
-
-    // 7. Manual overrides — corregir episodios afectados por la transición de estadísticas
-    // Ep #84: los primeros 7 días reales fueron 906 (hubo inflación por bots al poner el prefijo OP3)
-    const ep84 = merged.find(ep => /\#84[\s:,\-]|#84$/.test(ep.title));
-    if (ep84) {
-      ep84.downloads7 = 906;
-    }
-
-    res.json({ episodes: merged });
+    res.json({ episodes: await computeEpisodeStats() });
   } catch (err) {
     console.error('Stats error:', err);
     res.status(500).json({ error: 'Error al obtener estadísticas.' });
@@ -645,6 +624,167 @@ app.get('/api/trend', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Trend error:', err);
     res.status(500).json({ error: 'Error al obtener tendencia.' });
+  }
+});
+
+// ── Kajabi ────────────────────────────────────────────────────────────────────
+const KAJABI_BASE = 'https://api.kajabi.com/v1';
+let kajabiToken = null, kajabiTokenExpiry = 0;
+
+async function getKajabiToken() {
+  if (kajabiToken && Date.now() < kajabiTokenExpiry) return kajabiToken;
+  const k = process.env.KAJABI_API_KEY, s = process.env.KAJABI_API_SECRET;
+  if (!k || !s) return null;
+  try {
+    const res  = await fetch(`${KAJABI_BASE}/oauth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: k, client_secret: s })
+    });
+    const data = await res.json();
+    kajabiToken       = data.access_token;
+    kajabiTokenExpiry = Date.now() + ((data.expires_in || 7200) - 120) * 1000;
+    return kajabiToken;
+  } catch (e) { console.error('Kajabi token error:', e.message); return null; }
+}
+
+async function kajabiGet(path) {
+  const token = await getKajabiToken();
+  if (!token) throw new Error('Sin credenciales de Kajabi');
+  const res = await fetch(`${KAJABI_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+  });
+  if (!res.ok) throw new Error(`Kajabi ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+// ── Campaigns (stored in Redis) ───────────────────────────────────────────────
+const CAMPAIGNS_KEY = 'amqc-campaigns';
+async function loadCampaigns()          { return (await redisGet(CAMPAIGNS_KEY)) || []; }
+async function saveCampaigns(campaigns) { await redisSet(CAMPAIGNS_KEY, campaigns); }
+
+// ── Campaign routes ───────────────────────────────────────────────────────────
+app.get('/campaigns', requireAuth, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'campaigns.html'))
+);
+
+app.get('/api/kajabi/tags', requireAuth, async (req, res) => {
+  try {
+    const data = await kajabiGet('/contact_tags?page[size]=200');
+    res.json({ tags: (data.data || []).map(t => ({ id: t.id, name: t.attributes?.name || t.id })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/kajabi/forms', requireAuth, async (req, res) => {
+  try {
+    const data = await kajabiGet('/forms?page[size]=200');
+    res.json({ forms: (data.data || []).map(f => ({ id: f.id, name: f.attributes?.name || f.id })) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/campaigns', requireAuth, async (req, res) => {
+  try { res.json({ campaigns: await loadCampaigns() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/campaigns', requireAuth, express.json(), async (req, res) => {
+  try {
+    const campaigns = await loadCampaigns();
+    const c = {
+      id:              crypto.randomUUID(),
+      name:            req.body.name,
+      kajabiTagId:     req.body.kajabiTagId     || null,
+      kajabiTagName:   req.body.kajabiTagName   || null,
+      kajabiFormId:    req.body.kajabiFormId    || null,
+      kajabiFormName:  req.body.kajabiFormName  || null,
+      episodeNums:     req.body.episodeNums      || [],
+      createdAt:       new Date().toISOString()
+    };
+    campaigns.push(c);
+    await saveCampaigns(campaigns);
+    res.json({ campaign: c });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/campaigns/:id', requireAuth, express.json(), async (req, res) => {
+  try {
+    const campaigns = await loadCampaigns();
+    const idx = campaigns.findIndex(c => c.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+    campaigns[idx] = { ...campaigns[idx], ...req.body, id: campaigns[idx].id, createdAt: campaigns[idx].createdAt };
+    await saveCampaigns(campaigns);
+    res.json({ campaign: campaigns[idx] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/campaigns/:id', requireAuth, async (req, res) => {
+  try {
+    await saveCampaigns((await loadCampaigns()).filter(c => c.id !== req.params.id));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
+  try {
+    const campaigns = await loadCampaigns();
+    const campaign  = campaigns.find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaña no encontrada' });
+
+    const result = { campaign };
+
+    // ── Kajabi leads ──────────────────────────────────────────────────────────
+    if (campaign.kajabiTagId) {
+      try {
+        const [tot, d7, d30] = await Promise.all([
+          kajabiGet(`/contacts?filter[has_tag_id]=${campaign.kajabiTagId}&page[size]=1`),
+          kajabiGet(`/contacts?filter[has_tag_id]=${campaign.kajabiTagId}&filter[joined_in_last]=7&page[size]=1`),
+          kajabiGet(`/contacts?filter[has_tag_id]=${campaign.kajabiTagId}&filter[joined_in_last]=30&page[size]=1`)
+        ]);
+        result.leads = {
+          total: tot.meta?.total_count  || 0,
+          last7: d7.meta?.total_count   || 0,
+          last30: d30.meta?.total_count || 0
+        };
+      } catch (e) { result.leadsError = e.message; }
+    }
+
+    // ── Opt-ins por día (form submissions) ────────────────────────────────────
+    if (campaign.kajabiFormId) {
+      try {
+        let page = 1, allSubs = [];
+        while (true) {
+          const data = await kajabiGet(
+            `/form_submissions?filter[form_id]=${campaign.kajabiFormId}&page[size]=200&page[number]=${page}&sort=created_at`
+          );
+          allSubs.push(...(data.data || []));
+          if (page >= (data.meta?.total_pages || 1)) break;
+          page++;
+        }
+        const byDate = {};
+        for (const s of allSubs) {
+          const d = (s.attributes?.created_at || '').slice(0, 10);
+          if (d) byDate[d] = (byDate[d] || 0) + 1;
+        }
+        result.optinsByDay = Object.entries(byDate)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, count]) => ({ date, count }));
+        result.optinsTotal = allSubs.length;
+      } catch (e) { result.optinsError = e.message; }
+    }
+
+    // ── Episode stats ─────────────────────────────────────────────────────────
+    try {
+      const allEps = await computeEpisodeStats();
+      result.episodes = allEps.filter(ep => {
+        const n = parseInt((ep.title || '').match(/#(\d+)/)?.[1] || 0);
+        return campaign.episodeNums.includes(n);
+      });
+    } catch (e) { result.episodesError = e.message; }
+
+    res.json(result);
+  } catch (err) {
+    console.error('Campaign stats error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
