@@ -662,20 +662,25 @@ async function kajabiGet(path) {
 
 // ── Kajabi debug ─────────────────────────────────────────────────────────────
 app.get('/api/kajabi/debug', requireAuth, async (req, res) => {
-  try {
-    const token = await getKajabiToken();
-    const hdrs  = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.api+json' };
-    const [t, f] = await Promise.all([
-      fetch(`${KAJABI_BASE}/contact_tags?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`, { headers: hdrs }),
-      fetch(`${KAJABI_BASE}/forms?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`,        { headers: hdrs })
-    ]);
-    res.json({
-      site_id: KAJABI_SITE_ID,
-      token_ok: !!token,
-      tags:  { status: t.status, body: await t.json() },
-      forms: { status: f.status, body: await f.json() }
-    });
-  } catch (e) { res.json({ error: e.message }); }
+  const k = process.env.KAJABI_API_KEY, s = process.env.KAJABI_API_SECRET;
+  const oauthToken = await getKajabiToken();
+  const hdrs = { Authorization: `Bearer ${oauthToken}`, Accept: 'application/vnd.api+json' };
+
+  async function hit(label, url) {
+    try {
+      const r = await fetch(url, { headers: hdrs });
+      return { label, status: r.status, body: await r.json() };
+    } catch (e) { return { label, error: e.message }; }
+  }
+
+  const results = await Promise.all([
+    hit('me',               `https://api.kajabi.com/v1/me`),
+    hit('tags_with_site',   `https://api.kajabi.com/v1/contact_tags?filter[site_id]=${KAJABI_SITE_ID}&page[size]=3`),
+    hit('tags_no_filter',   `https://api.kajabi.com/v1/contact_tags?page[size]=3`),
+    hit('contacts_no_filter', `https://api.kajabi.com/v1/contacts?page[size]=1`),
+  ]);
+
+  res.json({ token_ok: !!oauthToken, results });
 });
 
 // ── Campaigns (stored in Redis) ───────────────────────────────────────────────
