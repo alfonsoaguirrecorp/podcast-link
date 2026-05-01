@@ -629,7 +629,7 @@ app.get('/api/trend', requireAuth, async (req, res) => {
 
 // ── Kajabi ────────────────────────────────────────────────────────────────────
 const KAJABI_BASE = 'https://api.kajabi.com/v1';
-let kajabiToken = null, kajabiTokenExpiry = 0;
+let kajabiToken = null, kajabiTokenExpiry = 0, kajabiSiteId = null;
 
 async function getKajabiToken() {
   if (kajabiToken && Date.now() < kajabiTokenExpiry) return kajabiToken;
@@ -642,6 +642,7 @@ async function getKajabiToken() {
       body: new URLSearchParams({ grant_type: 'client_credentials', client_id: k, client_secret: s })
     });
     const data = await res.json();
+    if (!data.access_token) throw new Error(JSON.stringify(data));
     kajabiToken       = data.access_token;
     kajabiTokenExpiry = Date.now() + ((data.expires_in || 7200) - 120) * 1000;
     return kajabiToken;
@@ -650,12 +651,22 @@ async function getKajabiToken() {
 
 async function kajabiGet(path) {
   const token = await getKajabiToken();
-  if (!token) throw new Error('Sin credenciales de Kajabi');
+  if (!token) throw new Error('Sin credenciales de Kajabi (verifica KAJABI_API_KEY y KAJABI_API_SECRET en Render)');
   const res = await fetch(`${KAJABI_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.api+json' }
   });
   if (!res.ok) throw new Error(`Kajabi ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+async function getKajabiSiteId() {
+  if (kajabiSiteId) return kajabiSiteId;
+  try {
+    const data = await kajabiGet('/sites');
+    kajabiSiteId = data.data?.[0]?.id || null;
+    if (kajabiSiteId) console.log(`✅ Kajabi site_id: ${kajabiSiteId}`);
+  } catch (e) { console.error('Kajabi site error:', e.message); }
+  return kajabiSiteId;
 }
 
 // ── Campaigns (stored in Redis) ───────────────────────────────────────────────
@@ -670,15 +681,20 @@ app.get('/campaigns', requireAuth, (req, res) =>
 
 app.get('/api/kajabi/tags', requireAuth, async (req, res) => {
   try {
-    const data = await kajabiGet('/contact_tags?page[size]=200');
+    const siteId = await getKajabiSiteId();
+    const qs     = siteId ? `?filter[site_id]=${siteId}&page[size]=200` : '?page[size]=200';
+    const data   = await kajabiGet(`/contact_tags${qs}`);
     res.json({ tags: (data.data || []).map(t => ({ id: t.id, name: t.attributes?.name || t.id })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/kajabi/forms', requireAuth, async (req, res) => {
   try {
-    const data = await kajabiGet('/forms?page[size]=200');
-    res.json({ forms: (data.data || []).map(f => ({ id: f.id, name: f.attributes?.name || f.id })) });
+    const siteId = await getKajabiSiteId();
+    const qs     = siteId ? `?filter[site_id]=${siteId}&page[size]=200` : '?page[size]=200';
+    const data   = await kajabiGet(`/forms${qs}`);
+    // El campo es "title" en forms, no "name"
+    res.json({ forms: (data.data || []).map(f => ({ id: f.id, name: f.attributes?.title || f.attributes?.name || f.id })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -735,10 +751,13 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
     // ── Kajabi leads ──────────────────────────────────────────────────────────
     if (campaign.kajabiTagId) {
       try {
+        const siteId  = await getKajabiSiteId();
+        const siteQs  = siteId ? `&filter[site_id]=${siteId}` : '';
+        const tagQs   = `filter[has_tag_id]=${campaign.kajabiTagId}${siteQs}&page[size]=1`;
         const [tot, d7, d30] = await Promise.all([
-          kajabiGet(`/contacts?filter[has_tag_id]=${campaign.kajabiTagId}&page[size]=1`),
-          kajabiGet(`/contacts?filter[has_tag_id]=${campaign.kajabiTagId}&filter[joined_in_last]=7&page[size]=1`),
-          kajabiGet(`/contacts?filter[has_tag_id]=${campaign.kajabiTagId}&filter[joined_in_last]=30&page[size]=1`)
+          kajabiGet(`/contacts?${tagQs}`),
+          kajabiGet(`/contacts?${tagQs}&filter[joined_in_last]=7`),
+          kajabiGet(`/contacts?${tagQs}&filter[joined_in_last]=30`)
         ]);
         result.leads = {
           total: tot.meta?.total_count  || 0,
