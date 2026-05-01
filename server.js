@@ -628,7 +628,8 @@ app.get('/api/trend', requireAuth, async (req, res) => {
 });
 
 // ── Kajabi ────────────────────────────────────────────────────────────────────
-const KAJABI_BASE = 'https://api.kajabi.com/v1';
+const KAJABI_BASE    = 'https://api.kajabi.com/v1';
+const KAJABI_SITE_ID = process.env.KAJABI_SITE_ID || '2147836598';
 let kajabiToken = null, kajabiTokenExpiry = 0, kajabiSiteId = null;
 
 async function getKajabiToken() {
@@ -653,61 +654,10 @@ async function kajabiGet(path) {
   const token = await getKajabiToken();
   if (!token) throw new Error('Sin credenciales de Kajabi (verifica KAJABI_API_KEY y KAJABI_API_SECRET en Render)');
   const res = await fetch(`${KAJABI_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.api+json' }
   });
   if (!res.ok) throw new Error(`Kajabi ${res.status}: ${await res.text()}`);
   return res.json();
-}
-
-// ── Kajabi debug (temporal) ───────────────────────────────────────────────────
-app.get('/api/kajabi/debug', requireAuth, async (req, res) => {
-  const out = {};
-  try {
-    const k = process.env.KAJABI_API_KEY, s = process.env.KAJABI_API_SECRET;
-    out.credenciales = k ? `key=${k.slice(0,6)}… secret=${s?.slice(0,6)}…` : 'NO ESTÁN en Render';
-
-    const tokenRes = await fetch(`${KAJABI_BASE}/oauth/token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'client_credentials', client_id: k, client_secret: s })
-    });
-    const tokenData = await tokenRes.json();
-    out.token_status = tokenRes.status;
-    out.token_ok     = !!tokenData.access_token;
-    out.token_error  = tokenData.error || tokenData.error_description || null;
-
-    if (tokenData.access_token) {
-      const sitesRes  = await fetch(`${KAJABI_BASE}/sites`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
-      const sitesData = await sitesRes.json();
-      out.sites_status = sitesRes.status;
-      out.sites_raw    = sitesData;
-
-      const siteId = sitesData.data?.[0]?.id;
-      // Test tags and forms directly (without site_id — sites endpoint gave 403)
-      const tagsRes  = await fetch(`${KAJABI_BASE}/contact_tags?page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
-      const tagsData = await tagsRes.json();
-      out.tags_status = tagsRes.status;
-      out.tags_raw    = tagsData;
-
-      const formsRes  = await fetch(`${KAJABI_BASE}/forms?page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
-      const formsData = await formsRes.json();
-      out.forms_status = formsRes.status;
-      out.forms_raw    = formsData;
-    }
-  } catch (e) { out.exception = e.message; }
-  res.json(out);
-});
-
-let kajabiSiteIdFetched = false;
-async function getKajabiSiteId() {
-  if (kajabiSiteIdFetched) return kajabiSiteId; // null is valid (no permission)
-  kajabiSiteIdFetched = true;
-  try {
-    const data = await kajabiGet('/sites');
-    kajabiSiteId = data.data?.[0]?.id || null;
-    if (kajabiSiteId) console.log(`✅ Kajabi site_id: ${kajabiSiteId}`);
-  } catch (e) { console.log('ℹ️  Kajabi /sites no disponible, continuando sin site_id'); }
-  return kajabiSiteId;
 }
 
 // ── Campaigns (stored in Redis) ───────────────────────────────────────────────
@@ -722,19 +672,14 @@ app.get('/campaigns', requireAuth, (req, res) =>
 
 app.get('/api/kajabi/tags', requireAuth, async (req, res) => {
   try {
-    const siteId = await getKajabiSiteId();
-    const qs     = siteId ? `?filter[site_id]=${siteId}&page[size]=200` : '?page[size]=200';
-    const data   = await kajabiGet(`/contact_tags${qs}`);
+    const data = await kajabiGet(`/contact_tags?filter[site_id]=${KAJABI_SITE_ID}&page[size]=200`);
     res.json({ tags: (data.data || []).map(t => ({ id: t.id, name: t.attributes?.name || t.id })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/kajabi/forms', requireAuth, async (req, res) => {
   try {
-    const siteId = await getKajabiSiteId();
-    const qs     = siteId ? `?filter[site_id]=${siteId}&page[size]=200` : '?page[size]=200';
-    const data   = await kajabiGet(`/forms${qs}`);
-    // El campo es "title" en forms, no "name"
+    const data = await kajabiGet(`/forms?filter[site_id]=${KAJABI_SITE_ID}&page[size]=200`);
     res.json({ forms: (data.data || []).map(f => ({ id: f.id, name: f.attributes?.title || f.attributes?.name || f.id })) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -792,9 +737,7 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
     // ── Kajabi leads ──────────────────────────────────────────────────────────
     if (campaign.kajabiTagId) {
       try {
-        const siteId  = await getKajabiSiteId();
-        const siteQs  = siteId ? `&filter[site_id]=${siteId}` : '';
-        const tagQs   = `filter[has_tag_id]=${campaign.kajabiTagId}${siteQs}&page[size]=1`;
+        const tagQs = `filter[has_tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=1`;
         const [tot, d7, d30] = await Promise.all([
           kajabiGet(`/contacts?${tagQs}`),
           kajabiGet(`/contacts?${tagQs}&filter[joined_in_last]=7`),
