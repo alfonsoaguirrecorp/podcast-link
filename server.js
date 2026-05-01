@@ -683,29 +683,30 @@ app.get('/api/kajabi/debug', requireAuth, async (req, res) => {
       out.sites_raw    = sitesData;
 
       const siteId = sitesData.data?.[0]?.id;
-      if (siteId) {
-        const tagsRes  = await fetch(`${KAJABI_BASE}/contact_tags?filter[site_id]=${siteId}&page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
-        const tagsData = await tagsRes.json();
-        out.tags_status = tagsRes.status;
-        out.tags_raw    = tagsData;
+      // Test tags and forms directly (without site_id — sites endpoint gave 403)
+      const tagsRes  = await fetch(`${KAJABI_BASE}/contact_tags?page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
+      const tagsData = await tagsRes.json();
+      out.tags_status = tagsRes.status;
+      out.tags_raw    = tagsData;
 
-        const formsRes  = await fetch(`${KAJABI_BASE}/forms?filter[site_id]=${siteId}&page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
-        const formsData = await formsRes.json();
-        out.forms_status = formsRes.status;
-        out.forms_raw    = formsData;
-      }
+      const formsRes  = await fetch(`${KAJABI_BASE}/forms?page[size]=5`, { headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' } });
+      const formsData = await formsRes.json();
+      out.forms_status = formsRes.status;
+      out.forms_raw    = formsData;
     }
   } catch (e) { out.exception = e.message; }
   res.json(out);
 });
 
+let kajabiSiteIdFetched = false;
 async function getKajabiSiteId() {
-  if (kajabiSiteId) return kajabiSiteId;
+  if (kajabiSiteIdFetched) return kajabiSiteId; // null is valid (no permission)
+  kajabiSiteIdFetched = true;
   try {
     const data = await kajabiGet('/sites');
     kajabiSiteId = data.data?.[0]?.id || null;
     if (kajabiSiteId) console.log(`✅ Kajabi site_id: ${kajabiSiteId}`);
-  } catch (e) { console.error('Kajabi site error:', e.message); }
+  } catch (e) { console.log('ℹ️  Kajabi /sites no disponible, continuando sin site_id'); }
   return kajabiSiteId;
 }
 
