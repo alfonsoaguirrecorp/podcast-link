@@ -660,6 +660,29 @@ async function kajabiGet(path) {
   return res.json();
 }
 
+// ── Kajabi debug: form submissions ───────────────────────────────────────────
+// Uso: /api/kajabi/debug-forms?formId=XXX
+app.get('/api/kajabi/debug-forms', requireAuth, async (req, res) => {
+  const formId = req.query.formId;
+  async function hit(label, path) {
+    try {
+      const data = await kajabiGet(path);
+      return { label, status: 'ok', count: data.data?.length, meta: data.meta, sample: data.data?.[0] };
+    } catch (e) { return { label, error: e.message }; }
+  }
+  const results = await Promise.all([
+    hit('forms_list',          `/forms?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`),
+    ...(formId ? [
+      hit('subs_with_site+form',   `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=3`),
+      hit('subs_form_only',        `/form_submissions?filter[form_id]=${formId}&page[size]=3`),
+      hit('subs_no_filter',        `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&page[size]=3`),
+    ] : [
+      hit('subs_no_filter',        `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&page[size]=3`),
+    ])
+  ]);
+  res.json({ formId, results });
+});
+
 // ── Kajabi debug ─────────────────────────────────────────────────────────────
 app.get('/api/kajabi/debug', requireAuth, async (req, res) => {
   const k = process.env.KAJABI_API_KEY, s = process.env.KAJABI_API_SECRET;
@@ -760,14 +783,19 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
     // ── Opt-ins por día (form submissions) ────────────────────────────────────
     if (campaign.kajabiFormId) {
       try {
+        const PAGE_SIZE = 200;
         let page = 1, allSubs = [];
         while (true) {
           const data = await kajabiGet(
-            `/form_submissions?filter[form_id]=${campaign.kajabiFormId}&page[size]=200&page[number]=${page}&sort=created_at`
+            `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${campaign.kajabiFormId}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=created_at`
           );
-          allSubs.push(...(data.data || []));
-          if (page >= (data.meta?.total_pages || 1)) break;
+          const items = data.data || [];
+          allSubs.push(...items);
+          if (items.length < PAGE_SIZE) break;
+          const totalPages = data.meta?.total_pages;
+          if (totalPages && page >= totalPages) break;
           page++;
+          if (page > 50) break;
         }
         const byDate = {};
         for (const s of allSubs) {
