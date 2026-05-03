@@ -195,10 +195,14 @@
     if (d >= 7 && ep.downloads7 > 0 && ep.avgAtTime != null)   return { val: ep.downloads7,  avg: ep.avgAtTime,   label: '7d' };
     if (d >= 3 && ep.downloads3 > 0 && ep.avgAtTimeD3 != null) return { val: ep.downloads3,  avg: ep.avgAtTimeD3, label: '3d' };
     if (d >= 1 && ep.downloads1 > 0 && ep.avgAtTimeD1 != null) return { val: ep.downloads1,  avg: ep.avgAtTimeD1, label: '1d' };
-    if (ep.downloadsAll > 0 && ep.avgAtTime != null) {
-      if (d >= 1 && d < 7) return { val: Math.round(ep.downloadsAll / d * 7), avg: ep.avgAtTime, label: 'proy.', projected: true };
-      if (d >= 7)          return { val: ep.downloadsAll, avg: ep.avgAtTime, label: 'total' };
+    // Proyección con curva de decaimiento (NO lineal):
+    // los podcasts son front-loaded, ~75% de las descargas de 7 días llegan en los primeros 2 días.
+    if (ep.downloadsAll > 0 && ep.avgAtTime != null && d >= 1 && d < 7) {
+      const decayCumulative = [0, 0.62, 0.75, 0.84, 0.90, 0.94, 0.97];
+      const factor = decayCumulative[Math.min(d, 6)];
+      return { val: Math.round(ep.downloadsAll / factor), avg: ep.avgAtTime, label: 'proy.', projected: true };
     }
+    if (d >= 7 && ep.downloadsAll > 0 && ep.avgAtTime != null) return { val: ep.downloadsAll, avg: ep.avgAtTime, label: 'total' };
     return { val: null, avg: null };
   }
 
