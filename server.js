@@ -787,7 +787,7 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
         let page = 1, allSubs = [];
         while (true) {
           const data = await kajabiGet(
-            `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${campaign.kajabiFormId}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=created_at`
+            `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${campaign.kajabiFormId}&sort=created_at&page[size]=${PAGE_SIZE}&page[number]=${page}`
           );
           const items = data.data || [];
           allSubs.push(...items);
@@ -799,13 +799,18 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
         }
         const byDate = {};
         for (const s of allSubs) {
-          const d = (s.attributes?.created_at || '').slice(0, 10);
+          // created_at puede estar en attributes, en la raíz o como submitted_at
+          const raw = s.attributes?.created_at || s.attributes?.submitted_at
+                   || s.created_at || s.submitted_at || '';
+          const d = raw.slice(0, 10);
           if (d) byDate[d] = (byDate[d] || 0) + 1;
         }
-        result.optinsByDay = Object.entries(byDate)
+        result.optinsByDay  = Object.entries(byDate)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([date, count]) => ({ date, count }));
-        result.optinsTotal = allSubs.length;
+        result.optinsTotal  = allSubs.length;
+        // Debug: exponer el primer submission completo para diagnóstico
+        result._subSample   = allSubs[0] || null;
       } catch (e) { result.optinsError = e.message; }
     }
 
@@ -853,25 +858,12 @@ app.get('/api/campaigns/:id/leads', requireAuth, async (req, res) => {
     const cutoff7  = Date.now() - 7  * 86400000;
     const cutoff30 = Date.now() - 30 * 86400000;
 
-    // Agrupar por día para la gráfica (created_at = fecha en que el contacto
-    // se registró con ese tag, equivalente a la fecha del opt-in)
-    const byDate = {};
-    for (const c of allContacts) {
-      const d = (c.attributes?.created_at || '').slice(0, 10);
-      if (d) byDate[d] = (byDate[d] || 0) + 1;
-    }
-    const optinsByDay = Object.entries(byDate)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, count]) => ({ date, count }));
-
     res.json({
       leads: {
         total: allContacts.length,
         last7:  allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff7).length,
         last30: allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff30).length
-      },
-      optinsByDay,
-      optinsTotal: allContacts.length
+      }
     });
   } catch (e) {
     res.status(500).json({ leadsError: e.message });
