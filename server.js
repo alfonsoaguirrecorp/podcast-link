@@ -853,12 +853,25 @@ app.get('/api/campaigns/:id/leads', requireAuth, async (req, res) => {
     const cutoff7  = Date.now() - 7  * 86400000;
     const cutoff30 = Date.now() - 30 * 86400000;
 
+    // Agrupar por día para la gráfica (created_at = fecha en que el contacto
+    // se registró con ese tag, equivalente a la fecha del opt-in)
+    const byDate = {};
+    for (const c of allContacts) {
+      const d = (c.attributes?.created_at || '').slice(0, 10);
+      if (d) byDate[d] = (byDate[d] || 0) + 1;
+    }
+    const optinsByDay = Object.entries(byDate)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({ date, count }));
+
     res.json({
       leads: {
         total: allContacts.length,
         last7:  allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff7).length,
         last30: allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff30).length
-      }
+      },
+      optinsByDay,
+      optinsTotal: allContacts.length
     });
   } catch (e) {
     res.status(500).json({ leadsError: e.message });
