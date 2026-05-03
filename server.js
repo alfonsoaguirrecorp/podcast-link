@@ -808,12 +808,10 @@ app.get('/api/campaigns/:id/leads', requireAuth, async (req, res) => {
     const PAGE_SIZE = 200;
     let page = 1, allContacts = [];
 
-    // Usar el endpoint de relación del tag: /contact_tags/:id/contacts
-    // Esto garantiza que solo devuelva contactos con ESE tag específico.
-    // (filter[tag_id] en /contacts ignora el filtro y devuelve todos los contactos)
+    // Documentación Kajabi: usar filter[site_id] + filter[has_tag_id] en /contacts
     while (true) {
       const chunk = await kajabiGet(
-        `/contact_tags/${campaign.kajabiTagId}/contacts?filter[site_id]=${KAJABI_SITE_ID}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
+        `/contacts?filter[site_id]=${KAJABI_SITE_ID}&filter[has_tag_id]=${campaign.kajabiTagId}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
       );
       const items = chunk.data || [];
       allContacts.push(...items);
