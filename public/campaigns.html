@@ -302,6 +302,14 @@
         return;
       }
 
+      // Actualizar gráfica con los datos de opt-ins por día
+      if (data.optinsByDay) {
+        const chartContainer = document.getElementById('optins-chart-container');
+        if (chartContainer) {
+          chartContainer.innerHTML = renderChart(data.optinsByDay, data.optinsTotal, null, campaign);
+        }
+      }
+
       if (data.leads) {
         const total = data.leads.total;
         const goal  = campaign.leadsGoal;
@@ -422,7 +430,11 @@
         </div>
       </div>
 
-      ${renderChart(optinsByDay, optinsTotal, optinsError, campaign)}
+      <div id="optins-chart-container">${
+        campaign.kajabiTagId
+          ? `<div class="chart-section"><p class="section-title">Opt-ins por día</p><p class="chart-empty" style="color:#555">Cargando…</p></div>`
+          : renderChart(null, null, null, campaign)
+      }</div>
 
       <div class="table-section">
         <p class="section-title">Episodios de la campaña</p>
@@ -433,16 +445,12 @@
   }
 
   function renderChart(optinsByDay, optinsTotal, optinsError, campaign) {
-    if (!campaign.kajabiFormId) {
+    // La gráfica usa contactos con el tag (tienen created_at = fecha de opt-in)
+    // Los form_submissions de Kajabi no incluyen fecha en su respuesta API
+    if (!campaign.kajabiTagId) {
       return `<div class="chart-section">
         <p class="section-title">Opt-ins por día</p>
-        <p class="chart-empty">No hay formulario asignado a esta campaña. Edítala para agregar uno.</p>
-      </div>`;
-    }
-    if (optinsError) {
-      return `<div class="chart-section">
-        <p class="section-title">Opt-ins por día</p>
-        <p class="chart-empty" style="color:#f87171">${optinsError}</p>
+        <p class="chart-empty">Asigna una etiqueta de Kajabi a esta campaña para ver los opt-ins.</p>
       </div>`;
     }
     if (!optinsByDay || optinsByDay.length === 0) {
@@ -463,7 +471,7 @@
 
     return `<div class="chart-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <p class="section-title" style="margin:0">Opt-ins por día · ${campaign.kajabiFormName || 'Formulario'}</p>
+        <p class="section-title" style="margin:0">Opt-ins por día · "${campaign.kajabiTagName}"</p>
         <span style="font-size:.78rem;color:#4ade80;font-weight:600">${fmt(optinsTotal)} total</span>
       </div>
       <div class="chart-wrap">${bars}</div>
