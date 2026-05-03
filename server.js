@@ -760,18 +760,28 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
     // ── Kajabi leads ──────────────────────────────────────────────────────────
     if (campaign.kajabiTagId) {
       try {
-        // Paginar TODOS los contactos con el tag para tener total exacto
-        // y poder calcular últimos 7/30 días client-side
-        let page = 1, allContacts = [], done = false;
-        while (!done) {
+        // Paginar TODOS los contactos con el tag.
+        // No confiamos en meta.total_pages (puede ser null en Kajabi v1).
+        // Paramos cuando la página devuelve menos de PAGE_SIZE resultados
+        // (señal de última página) o al llegar al safety cap.
+        const PAGE_SIZE = 200;
+        let page = 1, allContacts = [];
+        while (true) {
           const chunk = await kajabiGet(
-            `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=200&page[number]=${page}&sort=-created_at`
+            `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
           );
           const items = chunk.data || [];
           allContacts.push(...items);
-          if (!items.length || page >= (chunk.meta?.total_pages || 1)) done = true;
+
+          // Última página: menos resultados que el tamaño solicitado, o vacío
+          if (items.length < PAGE_SIZE) break;
+
+          // También respetamos total_pages si Kajabi lo devuelve
+          const totalPages = chunk.meta?.total_pages;
+          if (totalPages && page >= totalPages) break;
+
           page++;
-          if (page > 50) done = true; // safety cap ~10 000 contactos
+          if (page > 100) break; // safety cap: ~20 000 contactos máximo
         }
 
         const cutoff7  = Date.now() - 7  * 86400000;
