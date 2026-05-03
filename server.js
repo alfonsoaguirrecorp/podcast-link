@@ -797,7 +797,7 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
   }
 });
 
-// ── Leads endpoint separado (puede ser lento — carga lazy en el frontend) ──────
+// ── Leads endpoint separado (carga lazy en el frontend) ──────────────────────
 app.get('/api/campaigns/:id/leads', requireAuth, async (req, res) => {
   try {
     const campaigns = await loadCampaigns();
@@ -805,13 +805,15 @@ app.get('/api/campaigns/:id/leads', requireAuth, async (req, res) => {
     if (!campaign) return res.status(404).json({ error: 'Campaña no encontrada' });
     if (!campaign.kajabiTagId) return res.json({ leads: null });
 
-    // Paginar TODOS los contactos con el tag.
-    // Paramos cuando la página devuelve menos resultados que PAGE_SIZE (última página).
     const PAGE_SIZE = 200;
     let page = 1, allContacts = [];
+
+    // Usar el endpoint de relación del tag: /contact_tags/:id/contacts
+    // Esto garantiza que solo devuelva contactos con ESE tag específico.
+    // (filter[tag_id] en /contacts ignora el filtro y devuelve todos los contactos)
     while (true) {
       const chunk = await kajabiGet(
-        `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
+        `/contact_tags/${campaign.kajabiTagId}/contacts?filter[site_id]=${KAJABI_SITE_ID}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
       );
       const items = chunk.data || [];
       allContacts.push(...items);
