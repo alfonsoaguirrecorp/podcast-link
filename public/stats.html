@@ -296,6 +296,7 @@
       <span class="legend-item"><span class="legend-dot" style="background:#facc15"></span>±20% del promedio</span>
       <span class="legend-item"><span class="legend-dot" style="background:#f87171"></span>-20% bajo el promedio</span>
       <span class="legend-item"><span class="legend-dot" style="background:#888"></span>Datos incompletos</span>
+      <span class="legend-item" style="color:#555;font-style:italic">· "proy." = estimado con curva de decaimiento típica de podcasts (no lineal)</span>
     </div>
 
     <div class="table-wrap">
@@ -339,7 +340,12 @@
     }
 
     // Elige el mejor dato disponible según los días del episodio.
-    // Prioridad: día 1 real > día 3 real > día 7 real > proyección lineal.
+    // Prioridad: día 7 real > día 3 real > día 1 real > proyección con decaimiento.
+    //
+    // IMPORTANTE: NO se usa proyección lineal (total / d * 7) porque los podcasts
+    // tienen descargas "front-loaded": ~60-75% del total de 7 días ocurre en los
+    // primeros 2 días. Una proyección lineal desde el día 2 sobreestima entre 2-3×.
+    // En su lugar, usamos porcentajes acumulativos típicos de podcasts.
     function getMetric(ep) {
       const d = ep.daysOld;
       if (d == null) return { val: null, avg: null };
@@ -359,15 +365,21 @@
         return { val: ep.downloads1, avg: ep.avgAtTimeD1, label: '1d' };
       }
 
-      // Fallback: usar downloadsAll vs promedio d7
-      // d < 7: proyección lineal / d >= 7 con downloads7 null: usar total directamente
-      if (ep.downloadsAll > 0 && ep.avgAtTime != null) {
-        if (d >= 1 && d < 7) {
-          return { val: Math.round(ep.downloadsAll / d * 7), avg: ep.avgAtTime, label: 'proy.', projected: true };
-        }
-        if (d >= 7) {
-          return { val: ep.downloadsAll, avg: ep.avgAtTime, label: 'total' };
-        }
+      // Fallback: proyección ajustada por decaimiento de podcast.
+      // Los podcasts NO son lineales: la mayor parte de descargas llegan los primeros días.
+      // Usamos % acumulado típico del total de 7 días al finalizar cada día:
+      //   día 1 ≈ 62 %, día 2 ≈ 75 %, día 3 ≈ 84 %, día 4 ≈ 90 %, día 5 ≈ 94 %, día 6 ≈ 97 %
+      // Esto da proyecciones mucho más conservadoras (y honestas) que la lineal.
+      if (ep.downloadsAll > 0 && ep.avgAtTime != null && d >= 1 && d < 7) {
+        const decayCumulative = [0, 0.62, 0.75, 0.84, 0.90, 0.94, 0.97];
+        const factor = decayCumulative[Math.min(d, 6)];
+        const projected7d = Math.round(ep.downloadsAll / factor);
+        return { val: projected7d, avg: ep.avgAtTime, label: 'proy.', projected: true };
+      }
+
+      // Día 7+ sin downloads7 específico: usar total acumulado directamente
+      if (d >= 7 && ep.downloadsAll > 0 && ep.avgAtTime != null) {
+        return { val: ep.downloadsAll, avg: ep.avgAtTime, label: 'total' };
       }
 
       return { val: null, avg: null };
@@ -392,6 +404,13 @@
 
       const pct  = (val - avg) / avg;
       const note = `<small style="opacity:.6;font-size:.65rem"> ${label}</small>`;
+
+      if (projected) {
+        // Proyección = lenguaje provisional, no definitivo
+        if (pct >= 0.2)  return `<span class="action-tag green">Tendencia positiva${note}</span>`;
+        if (pct >= -0.2) return `<span class="action-tag yellow">Tendencia media${note}</span>`;
+        return `<span class="action-tag red">Tendencia baja${note}</span>`;
+      }
 
       if (pct >= 0.2)  return `<span class="action-tag green">Creciendo más que el promedio${note}</span>`;
       if (pct >= -0.2) return `<span class="action-tag yellow">Promedio alcanzado${note}</span>`;
