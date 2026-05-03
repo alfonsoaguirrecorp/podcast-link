@@ -760,17 +760,43 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
     // ── Kajabi leads ──────────────────────────────────────────────────────────
     if (campaign.kajabiTagId) {
       try {
-        const tagQs = `filter[has_tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=1`;
-        const [tot, d7, d30] = await Promise.all([
-          kajabiGet(`/contacts?${tagQs}`),
-          kajabiGet(`/contacts?${tagQs}&filter[joined_in_last]=7`),
-          kajabiGet(`/contacts?${tagQs}&filter[joined_in_last]=30`)
-        ]);
-        result.leads = {
-          total: tot.meta?.total_count  || 0,
-          last7: d7.meta?.total_count   || 0,
-          last30: d30.meta?.total_count || 0
-        };
+        const now   = new Date();
+        const d7ago  = new Date(now - 7  * 86400000).toISOString().split('T')[0];
+        const d30ago = new Date(now - 30 * 86400000).toISOString().split('T')[0];
+
+        // Traer total de contactos con ese tag
+        const totData = await kajabiGet(
+          `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=1`
+        );
+        const total = totData.meta?.total_count ?? totData.data?.length ?? 0;
+
+        // Contactos recientes: paginar y filtrar por fecha client-side
+        // (Kajabi v1 no siempre soporta filter[created_after] — lo hacemos aquí)
+        let page = 1, allContacts = [], done = false;
+        while (!done) {
+          const chunk = await kajabiGet(
+            `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=200&page[number]=${page}&sort=-created_at`
+          );
+          const items = chunk.data || [];
+          allContacts.push(...items);
+
+          // Si el contacto más viejo de esta página ya es > 30 días, podemos parar
+          const oldest = items[items.length - 1];
+          const oldestDate = oldest?.attributes?.created_at;
+          if (!items.length || page >= (chunk.meta?.total_pages || 1) ||
+              (oldestDate && new Date(oldestDate) < new Date(d30ago))) {
+            done = true;
+          }
+          page++;
+          if (page > 20) done = true; // safety cap
+        }
+
+        const cutoff7  = new Date(d7ago).getTime();
+        const cutoff30 = new Date(d30ago).getTime();
+        const last7  = allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff7).length;
+        const last30 = allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff30).length;
+
+        result.leads = { total, last7, last30 };
       } catch (e) { result.leadsError = e.message; }
     }
 
