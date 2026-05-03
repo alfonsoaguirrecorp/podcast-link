@@ -147,6 +147,17 @@
       </select>
     </div>
 
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-row" style="margin:0">
+        <label>Meta de leads</label>
+        <input type="number" id="f-goal" placeholder="Ej. 500" min="0" />
+      </div>
+      <div class="form-row" style="margin:0">
+        <label>Fecha de cierre</label>
+        <input type="date" id="f-enddate" />
+      </div>
+    </div>
+
     <div class="form-row">
       <label>Episodios de esta campaña</label>
       <div class="ep-checkboxes" id="ep-checkboxes">
@@ -292,20 +303,72 @@
       }
 
       if (data.leads) {
-        container.innerHTML = `
+        const total = data.leads.total;
+        const goal  = campaign.leadsGoal;
+
+        // Tarjeta 1: Total actual
+        const totalCard = `
           <div class="card accent">
             <div class="label">Total leads</div>
-            <div class="value">${fmt(data.leads.total)}</div>
+            <div class="value">${fmt(total)}</div>
             <div class="note">con etiqueta "${campaign.kajabiTagName}"</div>
-          </div>
-          <div class="card">
-            <div class="label">Nuevos últimos 7 días</div>
-            <div class="value">${fmt(data.leads.last7)}</div>
-          </div>
-          <div class="card">
-            <div class="label">Nuevos últimos 30 días</div>
-            <div class="value">${fmt(data.leads.last30)}</div>
           </div>`;
+
+        // Tarjeta 2: Leads para la meta
+        let goalCard = '';
+        if (goal != null) {
+          const remaining = goal - total;
+          if (remaining <= 0) {
+            goalCard = `
+              <div class="card" style="border:1px solid #2a3a2a">
+                <div class="label">Leads para la meta</div>
+                <div class="value" style="color:#4ade80">¡Meta!</div>
+                <div class="note">${fmt(Math.abs(remaining))} sobre la meta de ${fmt(goal)}</div>
+              </div>`;
+          } else {
+            goalCard = `
+              <div class="card">
+                <div class="label">Leads para la meta</div>
+                <div class="value">${fmt(remaining)}</div>
+                <div class="note">meta: ${fmt(goal)} leads</div>
+              </div>`;
+          }
+        }
+
+        // Tarjeta 3: Necesarios por día
+        let perDayCard = '';
+        if (goal != null && campaign.endDate) {
+          const remaining  = Math.max(0, goal - total);
+          const today      = new Date(); today.setHours(0, 0, 0, 0);
+          const end        = new Date(campaign.endDate + 'T00:00:00');
+          const daysLeft   = Math.ceil((end - today) / 86400000);
+
+          if (daysLeft <= 0) {
+            perDayCard = `
+              <div class="card">
+                <div class="label">Necesarios por día</div>
+                <div class="value" style="color:#888">—</div>
+                <div class="note">campaña finalizada</div>
+              </div>`;
+          } else if (remaining <= 0) {
+            perDayCard = `
+              <div class="card">
+                <div class="label">Días restantes</div>
+                <div class="value">${fmt(daysLeft)}</div>
+                <div class="note">hasta el ${new Date(campaign.endDate + 'T00:00:00').toLocaleDateString('es-MX', { day:'numeric', month:'short' })}</div>
+              </div>`;
+          } else {
+            const perDay = Math.ceil(remaining / daysLeft);
+            perDayCard = `
+              <div class="card">
+                <div class="label">Necesarios por día</div>
+                <div class="value">${fmt(perDay)}</div>
+                <div class="note">${fmt(daysLeft)} días restantes</div>
+              </div>`;
+          }
+        }
+
+        container.innerHTML = totalCard + goalCard + perDayCard;
       }
     } catch (e) {
       const container = document.getElementById('leads-cards');
@@ -331,15 +394,15 @@
     const avgD7 = episodes.filter(e => e.downloads7 > 0);
     const avgD7val = avgD7.length ? Math.round(avgD7.reduce((s,e) => s + e.downloads7, 0) / avgD7.length) : null;
 
-    // Placeholder de leads mientras carga (spinner animado)
+    // Placeholder de leads mientras carga (skeleton animado)
     const leadsPlaceholder = campaign.kajabiTagId ? `
-      <div class="card accent" id="leads-placeholder-card">
+      <div class="card accent">
         <div class="label">Total leads</div>
         <div class="value skeleton" style="width:60px;height:28px;margin:2px 0"></div>
-        <div class="note" style="color:#555">Cargando leads…</div>
+        <div class="note" style="color:#555">Cargando…</div>
       </div>
-      <div class="card"><div class="label">Nuevos últimos 7 días</div><div class="value skeleton" style="width:40px;height:28px;margin:2px 0"></div></div>
-      <div class="card"><div class="label">Nuevos últimos 30 días</div><div class="value skeleton" style="width:40px;height:28px;margin:2px 0"></div></div>
+      ${campaign.leadsGoal != null ? `<div class="card"><div class="label">Leads para la meta</div><div class="value skeleton" style="width:50px;height:28px;margin:2px 0"></div></div>` : ''}
+      ${campaign.leadsGoal != null && campaign.endDate ? `<div class="card"><div class="label">Necesarios por día</div><div class="value skeleton" style="width:40px;height:28px;margin:2px 0"></div></div>` : ''}
     ` : '';
 
     const html = `
@@ -438,7 +501,9 @@
   function openModal(prefill = null) {
     editingId = prefill?.id || null;
     document.getElementById('modal-title').textContent = editingId ? 'Editar campaña' : 'Nueva campaña';
-    document.getElementById('f-name').value = prefill?.name || '';
+    document.getElementById('f-name').value    = prefill?.name    || '';
+    document.getElementById('f-goal').value    = prefill?.leadsGoal != null ? prefill.leadsGoal : '';
+    document.getElementById('f-enddate').value = prefill?.endDate || '';
 
     // Tags dropdown
     const tagSel = document.getElementById('f-tag');
@@ -489,13 +554,18 @@
     const checkedNums = [...document.querySelectorAll('#ep-checkboxes input:checked')]
       .map(el => parseInt(el.value)).filter(Boolean);
 
+    const goalVal   = parseInt(document.getElementById('f-goal').value);
+    const endDateVal = document.getElementById('f-enddate').value;
+
     const payload = {
       name,
       kajabiTagId:    tagSel.value  || null,
       kajabiTagName:  tagSel.value  ? tagSel.options[tagSel.selectedIndex].dataset.name : null,
       kajabiFormId:   formSel.value || null,
       kajabiFormName: formSel.value ? formSel.options[formSel.selectedIndex].dataset.name : null,
-      episodeNums:    checkedNums
+      episodeNums:    checkedNums,
+      leadsGoal:      isNaN(goalVal) ? null : goalVal,
+      endDate:        endDateVal || null
     };
 
     const url    = editingId ? `/api/campaigns/${editingId}` : '/api/campaigns';
