@@ -302,14 +302,6 @@
         return;
       }
 
-      // Actualizar gráfica con los datos de opt-ins por día
-      if (data.optinsByDay) {
-        const chartContainer = document.getElementById('optins-chart-container');
-        if (chartContainer) {
-          chartContainer.innerHTML = renderChart(data.optinsByDay, data.optinsTotal, null, campaign);
-        }
-      }
-
       if (data.leads) {
         const total = data.leads.total;
         const goal  = campaign.leadsGoal;
@@ -430,11 +422,7 @@
         </div>
       </div>
 
-      <div id="optins-chart-container">${
-        campaign.kajabiTagId
-          ? `<div class="chart-section"><p class="section-title">Opt-ins por día</p><p class="chart-empty" style="color:#555">Cargando…</p></div>`
-          : renderChart(null, null, null, campaign)
-      }</div>
+      <div id="optins-chart-container">${renderChart(optinsByDay, optinsTotal, optinsError, campaign)}</div>
 
       <div class="table-section">
         <p class="section-title">Episodios de la campaña</p>
