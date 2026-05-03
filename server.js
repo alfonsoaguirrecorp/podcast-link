@@ -757,44 +757,6 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
 
     const result = { campaign };
 
-    // ── Kajabi leads ──────────────────────────────────────────────────────────
-    if (campaign.kajabiTagId) {
-      try {
-        // Paginar TODOS los contactos con el tag.
-        // No confiamos en meta.total_pages (puede ser null en Kajabi v1).
-        // Paramos cuando la página devuelve menos de PAGE_SIZE resultados
-        // (señal de última página) o al llegar al safety cap.
-        const PAGE_SIZE = 200;
-        let page = 1, allContacts = [];
-        while (true) {
-          const chunk = await kajabiGet(
-            `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
-          );
-          const items = chunk.data || [];
-          allContacts.push(...items);
-
-          // Última página: menos resultados que el tamaño solicitado, o vacío
-          if (items.length < PAGE_SIZE) break;
-
-          // También respetamos total_pages si Kajabi lo devuelve
-          const totalPages = chunk.meta?.total_pages;
-          if (totalPages && page >= totalPages) break;
-
-          page++;
-          if (page > 100) break; // safety cap: ~20 000 contactos máximo
-        }
-
-        const cutoff7  = Date.now() - 7  * 86400000;
-        const cutoff30 = Date.now() - 30 * 86400000;
-
-        result.leads = {
-          total: allContacts.length,
-          last7:  allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff7).length,
-          last30: allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff30).length
-        };
-      } catch (e) { result.leadsError = e.message; }
-    }
-
     // ── Opt-ins por día (form submissions) ────────────────────────────────────
     if (campaign.kajabiFormId) {
       try {
@@ -832,6 +794,46 @@ app.get('/api/campaigns/:id/stats', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Campaign stats error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Leads endpoint separado (puede ser lento — carga lazy en el frontend) ──────
+app.get('/api/campaigns/:id/leads', requireAuth, async (req, res) => {
+  try {
+    const campaigns = await loadCampaigns();
+    const campaign  = campaigns.find(c => c.id === req.params.id);
+    if (!campaign) return res.status(404).json({ error: 'Campaña no encontrada' });
+    if (!campaign.kajabiTagId) return res.json({ leads: null });
+
+    // Paginar TODOS los contactos con el tag.
+    // Paramos cuando la página devuelve menos resultados que PAGE_SIZE (última página).
+    const PAGE_SIZE = 200;
+    let page = 1, allContacts = [];
+    while (true) {
+      const chunk = await kajabiGet(
+        `/contacts?filter[tag_id]=${campaign.kajabiTagId}&filter[site_id]=${KAJABI_SITE_ID}&page[size]=${PAGE_SIZE}&page[number]=${page}&sort=-created_at`
+      );
+      const items = chunk.data || [];
+      allContacts.push(...items);
+      if (items.length < PAGE_SIZE) break;
+      const totalPages = chunk.meta?.total_pages;
+      if (totalPages && page >= totalPages) break;
+      page++;
+      if (page > 100) break; // safety cap ~20 000 contactos
+    }
+
+    const cutoff7  = Date.now() - 7  * 86400000;
+    const cutoff30 = Date.now() - 30 * 86400000;
+
+    res.json({
+      leads: {
+        total: allContacts.length,
+        last7:  allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff7).length,
+        last30: allContacts.filter(c => new Date(c.attributes?.created_at).getTime() >= cutoff30).length
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ leadsError: e.message });
   }
 });
 
