@@ -264,17 +264,59 @@
       `<div class="empty"><span class="skeleton" style="width:200px;height:16px;display:inline-block"></span></div>`;
 
     try {
+      // Carga episodios + opt-ins primero (rápido)
       const data = await fetch(`/api/campaigns/${id}/stats`).then(r => r.json());
       renderStats(data);
+
+      // Carga leads por separado (puede tardar — pagina contactos de Kajabi)
+      if (data.campaign?.kajabiTagId) {
+        loadLeads(id, data.campaign);
+      }
     } catch (e) {
       document.getElementById('stats-area').innerHTML =
         `<div class="error-msg">Error al cargar estadísticas: ${e.message}</div>`;
     }
   }
 
+  // Carga los leads de Kajabi de forma independiente y actualiza las tarjetas
+  async function loadLeads(id, campaign) {
+    try {
+      const data = await fetch(`/api/campaigns/${id}/leads`).then(r => r.json());
+      const container = document.getElementById('leads-cards');
+      if (!container) return;
+
+      if (data.leadsError) {
+        container.innerHTML =
+          `<div class="card"><div class="label">Leads campaña</div><div class="note" style="color:#f87171">${data.leadsError}</div></div>`;
+        return;
+      }
+
+      if (data.leads) {
+        container.innerHTML = `
+          <div class="card accent">
+            <div class="label">Total leads</div>
+            <div class="value">${fmt(data.leads.total)}</div>
+            <div class="note">con etiqueta "${campaign.kajabiTagName}"</div>
+          </div>
+          <div class="card">
+            <div class="label">Nuevos últimos 7 días</div>
+            <div class="value">${fmt(data.leads.last7)}</div>
+          </div>
+          <div class="card">
+            <div class="label">Nuevos últimos 30 días</div>
+            <div class="value">${fmt(data.leads.last30)}</div>
+          </div>`;
+      }
+    } catch (e) {
+      const container = document.getElementById('leads-cards');
+      if (container) container.innerHTML =
+        `<div class="card"><div class="label">Leads campaña</div><div class="note" style="color:#f87171">Error: ${e.message}</div></div>`;
+    }
+  }
+
   // ── Render stats ──────────────────────────────────────────────────────────────
   function renderStats(data) {
-    const { campaign, leads, leadsError, optinsByDay, optinsTotal, optinsError, episodes = [] } = data;
+    const { campaign, optinsByDay, optinsTotal, optinsError, episodes = [] } = data;
 
     // Compute rolling avgs using ALL podcast episodes as context
     computeRollingAvgs(allEpisodes);
@@ -289,31 +331,22 @@
     const avgD7 = episodes.filter(e => e.downloads7 > 0);
     const avgD7val = avgD7.length ? Math.round(avgD7.reduce((s,e) => s + e.downloads7, 0) / avgD7.length) : null;
 
-    let leadsHTML = '';
-    if (leadsError) {
-      leadsHTML = `<div class="card"><div class="label">Leads campaña</div><div class="note" style="color:#f87171">${leadsError}</div></div>`;
-    } else if (leads) {
-      leadsHTML = `
-        <div class="card accent">
-          <div class="label">Total leads</div>
-          <div class="value">${fmt(leads.total)}</div>
-          <div class="note">con etiqueta "${campaign.kajabiTagName}"</div>
-        </div>
-        <div class="card">
-          <div class="label">Nuevos últimos 7 días</div>
-          <div class="value">${fmt(leads.last7)}</div>
-        </div>
-        <div class="card">
-          <div class="label">Nuevos últimos 30 días</div>
-          <div class="value">${fmt(leads.last30)}</div>
-        </div>`;
-    }
+    // Placeholder de leads mientras carga (spinner animado)
+    const leadsPlaceholder = campaign.kajabiTagId ? `
+      <div class="card accent" id="leads-placeholder-card">
+        <div class="label">Total leads</div>
+        <div class="value skeleton" style="width:60px;height:28px;margin:2px 0"></div>
+        <div class="note" style="color:#555">Cargando leads…</div>
+      </div>
+      <div class="card"><div class="label">Nuevos últimos 7 días</div><div class="value skeleton" style="width:40px;height:28px;margin:2px 0"></div></div>
+      <div class="card"><div class="label">Nuevos últimos 30 días</div><div class="value skeleton" style="width:40px;height:28px;margin:2px 0"></div></div>
+    ` : '';
 
     const html = `
       <h2 style="font-size:1rem;color:#888;font-weight:500;margin-bottom:16px">${campaign.name}</h2>
 
       <div class="summary-row">
-        ${leadsHTML}
+        <div id="leads-cards" style="display:contents">${leadsPlaceholder}</div>
         <div class="card">
           <div class="label">Descargas totales</div>
           <div class="value">${fmt(totalDownloads || null)}</div>
