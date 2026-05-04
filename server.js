@@ -670,16 +670,14 @@ app.get('/api/kajabi/debug-forms', requireAuth, async (req, res) => {
       return { label, status: 'ok', count: data.data?.length, meta: data.meta, sample: data.data?.[0] };
     } catch (e) { return { label, error: e.message }; }
   }
-  const results = await Promise.all([
-    hit('forms_list',          `/forms?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`),
-    ...(formId ? [
-      hit('subs_with_site+form',   `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=3`),
-      hit('subs_form_only',        `/form_submissions?filter[form_id]=${formId}&page[size]=3`),
-      hit('subs_no_filter',        `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&page[size]=3`),
-    ] : [
-      hit('subs_no_filter',        `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&page[size]=3`),
-    ])
-  ]);
+  const results = formId ? await Promise.all([
+    // ¿Devuelve created_at si lo pedimos explícitamente?
+    hit('fields_created_at',     `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&fields[form_submissions]=created_at&page[size]=3`),
+    // ¿Aparece en el objeto raíz (fuera de attributes)?
+    hit('full_single_sub',       `/form_submissions/${(await kajabiGet(`/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=1`).catch(()=>({data:[]}))).data?.[0]?.id || 'none'}`),
+    // ¿Include site trae más datos?
+    hit('include_form',          `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&include=form&page[size]=1`),
+  ]) : [{ error: 'Pasa ?formId=XXX en la URL' }];
   res.json({ formId, results });
 });
 
