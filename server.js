@@ -674,45 +674,24 @@ app.get('/api/kajabi/debug-forms', requireAuth, async (req, res) => {
 
   const results = [];
 
-  // ── Test: ¿los contact_tags tienen fecha de asignación? ───────────────────
-  if (tagId) {
-    // Traer un contacto que tenga este tag e incluir sus contact_tags
-    const contactsWithTag = await kajabiGet(
-      `/contacts?filter[site_id]=${KAJABI_SITE_ID}&filter[has_tag_id]=${tagId}&page[size]=1`
-    ).catch(() => ({ data: [] }));
-    const contactId = contactsWithTag.data?.[0]?.id;
-
-    if (contactId) {
-      results.push(await hit(
-        'contact_with_include_tags',
-        `/contacts/${contactId}?include=contact_tags`
-      ));
-      results.push(await hit(
-        'contact_tags_relationship',
-        `/contacts/${contactId}/contact_tags`
-      ));
-      // ¿Hay un endpoint de taggings o tag_assignments?
-      results.push(await hit(
-        'contact_taggings',
-        `/contacts/${contactId}/taggings`
-      ));
-    } else {
-      results.push({ label: 'no_contact_found', tagId });
-    }
-  }
-
   if (formId) {
-    results.push(await hit(
-      'include_form',
-      `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&include=form&page[size]=1`
-    ));
+    // Kajabi muestra "Opt-ins por día" en su UI filtrado por form/landing page.
+    // Su API pública no expone created_at en form_submissions, pero puede
+    // haber un endpoint dedicado de opt-ins o landing pages con fechas.
+    await Promise.all([
+      hit('opt_ins_by_form',        `/opt_ins?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=3`),
+      hit('opt_ins_no_filter',      `/opt_ins?filter[site_id]=${KAJABI_SITE_ID}&page[size]=3`),
+      hit('opt_in_events',          `/opt_in_events?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=3`),
+      hit('landing_pages',          `/landing_pages?filter[site_id]=${KAJABI_SITE_ID}&page[size]=5`),
+      hit('landing_page_by_form',   `/landing_pages/${formId}`),
+      hit('landing_page_subs',      `/landing_pages/${formId}/subscriptions?page[size]=3`),
+      hit('subscriptions_by_form',  `/subscriptions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=3`),
+    ]).then(r => results.push(...r));
+  } else {
+    results.push({ error: 'Pasa ?formId=XXX en la URL' });
   }
 
-  if (!tagId && !formId) {
-    results.push({ error: 'Pasa ?tagId=XXX y/o ?formId=XXX en la URL' });
-  }
-
-  res.json({ tagId, formId, results });
+  res.json({ formId, results });
 });
 
 // ── Kajabi debug ─────────────────────────────────────────────────────────────
