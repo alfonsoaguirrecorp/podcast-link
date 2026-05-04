@@ -153,6 +153,13 @@
         <input type="number" id="f-goal" placeholder="Ej. 500" min="0" />
       </div>
       <div class="form-row" style="margin:0">
+        <label>Fecha de inicio</label>
+        <input type="date" id="f-startdate" />
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:0">
+      <div></div>
+      <div class="form-row" style="margin:0">
         <label>Fecha de cierre</label>
         <input type="date" id="f-enddate" />
       </div>
@@ -433,18 +440,34 @@
   }
 
   function renderChart(optinsByDay, optinsTotal, optinsError, campaign) {
-    // La gráfica usa contactos con el tag (tienen created_at = fecha de opt-in)
-    // Los form_submissions de Kajabi no incluyen fecha en su respuesta API
+    // La API pública de Kajabi v1 no expone fechas en form_submissions.
+    // Se muestra un enlace directo al reporte de opt-ins en Kajabi cuando hay formulario configurado.
+    let kajabiLink = '';
+    if (campaign.kajabiFormId) {
+      const today     = new Date();
+      const startD    = new Date(today.getTime() - Math.round(1.5 * 365.25 * 86400000));
+      const startDate = startD.toISOString().split('T')[0];
+      const endDate   = campaign.endDate || today.toISOString().split('T')[0];
+      const kajabiUrl = `https://app.kajabi.com/admin/sites/2147836598/reports/opt_ins_report?start_date=${startDate}&end_date=${endDate}&forms[]=${campaign.kajabiFormId}`;
+      kajabiLink = `<a href="${kajabiUrl}" target="_blank" rel="noopener noreferrer"
+        style="font-size:.75rem;color:#666;text-decoration:none;display:inline-flex;align-items:center;gap:4px;margin-top:12px;transition:color .15s"
+        onmouseover="this.style.color='#aaa'" onmouseout="this.style.color='#666'">
+        Ver gráfica en Kajabi ↗
+      </a>`;
+    }
+
     if (!campaign.kajabiTagId) {
       return `<div class="chart-section">
         <p class="section-title">Opt-ins por día</p>
         <p class="chart-empty">Asigna una etiqueta de Kajabi a esta campaña para ver los opt-ins.</p>
+        ${kajabiLink}
       </div>`;
     }
     if (!optinsByDay || optinsByDay.length === 0) {
       return `<div class="chart-section">
         <p class="section-title">Opt-ins por día</p>
         <p class="chart-empty">Aún no hay opt-ins registrados.</p>
+        ${kajabiLink}
       </div>`;
     }
 
@@ -463,6 +486,7 @@
         <span style="font-size:.78rem;color:#4ade80;font-weight:600">${fmt(optinsTotal)} total</span>
       </div>
       <div class="chart-wrap">${bars}</div>
+      ${kajabiLink}
     </div>`;
   }
 
@@ -498,8 +522,9 @@
     editingId = prefill?.id || null;
     document.getElementById('modal-title').textContent = editingId ? 'Editar campaña' : 'Nueva campaña';
     document.getElementById('f-name').value    = prefill?.name    || '';
-    document.getElementById('f-goal').value    = prefill?.leadsGoal != null ? prefill.leadsGoal : '';
-    document.getElementById('f-enddate').value = prefill?.endDate || '';
+    document.getElementById('f-goal').value      = prefill?.leadsGoal != null ? prefill.leadsGoal : '';
+    document.getElementById('f-startdate').value = prefill?.startDate || '';
+    document.getElementById('f-enddate').value   = prefill?.endDate   || '';
 
     // Tags dropdown
     const tagSel = document.getElementById('f-tag');
@@ -550,8 +575,9 @@
     const checkedNums = [...document.querySelectorAll('#ep-checkboxes input:checked')]
       .map(el => parseInt(el.value)).filter(Boolean);
 
-    const goalVal   = parseInt(document.getElementById('f-goal').value);
-    const endDateVal = document.getElementById('f-enddate').value;
+    const goalVal      = parseInt(document.getElementById('f-goal').value);
+    const startDateVal = document.getElementById('f-startdate').value;
+    const endDateVal   = document.getElementById('f-enddate').value;
 
     const payload = {
       name,
@@ -561,7 +587,8 @@
       kajabiFormName: formSel.value ? formSel.options[formSel.selectedIndex].dataset.name : null,
       episodeNums:    checkedNums,
       leadsGoal:      isNaN(goalVal) ? null : goalVal,
-      endDate:        endDateVal || null
+      startDate:      startDateVal  || null,
+      endDate:        endDateVal    || null
     };
 
     const url    = editingId ? `/api/campaigns/${editingId}` : '/api/campaigns';
