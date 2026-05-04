@@ -664,21 +664,55 @@ async function kajabiGet(path) {
 // Uso: /api/kajabi/debug-forms?formId=XXX
 app.get('/api/kajabi/debug-forms', requireAuth, async (req, res) => {
   const formId = req.query.formId;
+  const tagId  = req.query.tagId;
   async function hit(label, path) {
     try {
       const data = await kajabiGet(path);
       return { label, status: 'ok', count: data.data?.length, meta: data.meta, sample: data.data?.[0] };
     } catch (e) { return { label, error: e.message }; }
   }
-  const results = formId ? await Promise.all([
-    // ¿Devuelve created_at si lo pedimos explícitamente?
-    hit('fields_created_at',     `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&fields[form_submissions]=created_at&page[size]=3`),
-    // ¿Aparece en el objeto raíz (fuera de attributes)?
-    hit('full_single_sub',       `/form_submissions/${(await kajabiGet(`/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&page[size]=1`).catch(()=>({data:[]}))).data?.[0]?.id || 'none'}`),
-    // ¿Include site trae más datos?
-    hit('include_form',          `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&include=form&page[size]=1`),
-  ]) : [{ error: 'Pasa ?formId=XXX en la URL' }];
-  res.json({ formId, results });
+
+  const results = [];
+
+  // ── Test: ¿los contact_tags tienen fecha de asignación? ───────────────────
+  if (tagId) {
+    // Traer un contacto que tenga este tag e incluir sus contact_tags
+    const contactsWithTag = await kajabiGet(
+      `/contacts?filter[site_id]=${KAJABI_SITE_ID}&filter[has_tag_id]=${tagId}&page[size]=1`
+    ).catch(() => ({ data: [] }));
+    const contactId = contactsWithTag.data?.[0]?.id;
+
+    if (contactId) {
+      results.push(await hit(
+        'contact_with_include_tags',
+        `/contacts/${contactId}?include=contact_tags`
+      ));
+      results.push(await hit(
+        'contact_tags_relationship',
+        `/contacts/${contactId}/contact_tags`
+      ));
+      // ¿Hay un endpoint de taggings o tag_assignments?
+      results.push(await hit(
+        'contact_taggings',
+        `/contacts/${contactId}/taggings`
+      ));
+    } else {
+      results.push({ label: 'no_contact_found', tagId });
+    }
+  }
+
+  if (formId) {
+    results.push(await hit(
+      'include_form',
+      `/form_submissions?filter[site_id]=${KAJABI_SITE_ID}&filter[form_id]=${formId}&include=form&page[size]=1`
+    ));
+  }
+
+  if (!tagId && !formId) {
+    results.push({ error: 'Pasa ?tagId=XXX y/o ?formId=XXX en la URL' });
+  }
+
+  res.json({ tagId, formId, results });
 });
 
 // ── Kajabi debug ─────────────────────────────────────────────────────────────
