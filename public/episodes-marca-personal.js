@@ -21,7 +21,7 @@
     .amqcmp-play svg { width:18px; height:18px; fill:#fff; margin-left:2px; }
 
     /* Text */
-    .amqcmp-ep-title { font-size:.88rem !important; font-weight:600 !important; line-height:1.35 !important; color:#111 !important; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin:0 !important; }
+    .amqcmp-ep-title { font-size:.88rem !important; font-weight:600 !important; line-height:1.35 !important; color:#111 !important; margin:0 !important; }
     .amqcmp-ep-meta  { font-size:.73rem !important; color:#888 !important; margin-top:3px !important; }
     .amqcmp-ep-chev  { color:#ccc; font-size:1.1rem; flex-shrink:0; margin-left:auto; padding-left:8px; }
 
